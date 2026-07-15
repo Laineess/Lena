@@ -1,0 +1,58 @@
+# Leña — producción en VPS de caja chica (1 vCPU / 2 GB, compartido con
+# portal_escolar, pretty_faces y MySQL).
+#
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# Diferencias con el compose de desarrollo:
+#   - Límite de memoria duro: Postgres no puede asfixiar a los vecinos
+#   - Postgres afinado para caja chica, no para un servidor dedicado
+#   - Logs rotados: sin esto llenan el disco con el tiempo
+#
+# Ver Docs/12.-Bitacora de despliegue VPS.md
+
+services:
+  postgres:
+    # RS-T-6: SOLO la interfaz local. Nunca al internet.
+    # Desde fuera se entra por túnel SSH, no abriendo el puerto.
+    ports:
+      - '127.0.0.1:5432:5432'
+
+    # El límite duro es lo que protege a portal_escolar y pretty_faces:
+    # aunque Postgres se descontrole, no pasa de aquí.
+    # Medido en producción: usa 27 MB de estos 256.
+    mem_limit: 256m
+    mem_reservation: 128m
+    cpus: 0.5
+
+    command:
+      - postgres
+      # Caja chica: 64 MB cachean de sobra una base que hoy está vacía.
+      - -c
+      - shared_buffers=64MB
+      # 20 conexiones: el API tiene pool de 10 y hay 4 dispositivos (R5).
+      - -c
+      - max_connections=20
+      - -c
+      - work_mem=4MB
+      - -c
+      - maintenance_work_mem=32MB
+      # Lo que el SO tiene de caché disponible para Postgres.
+      - -c
+      - effective_cache_size=192MB
+      # 1 vCPU: paralelizar consultas aquí solo agrega overhead.
+      - -c
+      - max_parallel_workers_per_gather=0
+      - -c
+      - max_worker_processes=2
+      # Disco SSD.
+      - -c
+      - random_page_cost=1.1
+      # Diagnóstico: registrar consultas lentas (RNF-P-6 pide < 2 s).
+      - -c
+      - log_min_duration_statement=1000
+
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: 3
