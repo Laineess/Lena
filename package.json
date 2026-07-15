@@ -1,0 +1,29 @@
+{
+  "name": "lena",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Leña — Sistema de comandas y gestión para restaurantes pequeños",
+  "author": "Carlos González Laines",
+  "license": "UNLICENSED",
+  "packageManager": "pnpm@9.15.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "db:generate": "pnpm --filter @lena/db generate",
+    "db:migrate": "pnpm --filter @lena/db migrate",
+    "db:seed": "pnpm --filter @lena/db seed",
+    "db:studio": "pnpm --filter @lena/db studio",
+    "db:up": "docker compose up -d postgres",
+    "db:down": "docker compose down",
+    "db:reset": "docker compose down -v && docker compose up -d postgres",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "pnpm -r lint",
+    "test": "pnpm -r test",
+    "check": "pnpm typecheck && pnpm lint && pnpm test"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "typescript": "^5.7.2"
+  }
+}

@@ -1,0 +1,52 @@
+# Dependencias
+node_modules/
+.pnpm-store/
+
+# Build
+dist/
+build/
+.turbo/
+*.tsbuildinfo
+
+# Entorno — NUNCA se sube (RS-T-10)
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Datos locales de Postgres
+postgres-data/
+pgdata/
+
+# Respaldos
+*.dump
+*.sql.gz
+backups/
+
+# Editor
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.swp
+
+# SO
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+logs/
+
+# Pruebas
+coverage/
+.nyc_output/
+playwright-report/
+test-results/
+
+# Caché
+.cache/
+.eslintcache
+.vite/
