@@ -4,6 +4,7 @@ import type { Catalogo, DatosSesion } from './dominio/api';
 import { crearMotor, reanudar, tokenAcceso } from './dominio/motor';
 import type { Motor } from './dominio/motor';
 import { Captura } from './pantallas/Captura';
+import { Cocina } from './pantallas/Cocina';
 import { Comandas } from './pantallas/Comandas';
 import { Ingreso } from './pantallas/Ingreso';
 
@@ -68,6 +69,11 @@ export function App() {
 
   const motor = motorRef.current as Motor;
   const enLineaReal = enLinea && tokenAcceso() !== null;
+
+  // La cocina tiene su propia vista (09 §6): tarjetas, no captura.
+  if (sesion.sesion.rol === 'cocina') {
+    return <Cocina sesion={sesion} catalogo={catalogo} motor={motor} enLinea={enLineaReal} onSincronizar={() => void sincronizar()} />;
+  }
 
   if (vista.v === 'comandas') {
     return (

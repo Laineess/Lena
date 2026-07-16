@@ -7,7 +7,10 @@ const ctx = {
   actorId: '018f1a2b-0000-7000-8000-000000000002',
   dispositivoId: '018f1a2b-0000-7000-8000-000000000003',
   nodo: 'A',
+  rol: 'mesero' as const,
 };
+
+const ctxCocina = { ...ctx, nodo: 'K', rol: 'cocina' as const };
 
 const linea = {
   productoId: '018f1a2b-0000-7000-8000-000000000009',
@@ -67,5 +70,17 @@ describe('ConstructorEventos', () => {
     const eventos = c.agregarLineas(comandaId, [linea, { ...linea, cantidad: 1 }]);
     expect(eventos.map((e) => e.tipo)).toEqual(['linea_agregada', 'linea_agregada', 'comanda_enviada']);
     expect(eventos.every((e) => e.comandaId === comandaId)).toBe(true);
+  });
+
+  it('cocina: marcarLista y cancelarLinea salen con rol cocina y son emitibles', () => {
+    const c = new ConstructorEventos(ctxCocina);
+    const cid = '018f1a2b-0000-7000-8000-0000000000bb';
+    const lista = c.marcarLista(cid);
+    const cancel = c.cancelarLinea(cid, '018f1a2b-0000-7000-8000-0000000000cc', 'se acabó el pastor');
+    expect(lista.rolActor).toBe('cocina');
+    expect(eventoPermitido(lista.tipo, 'cocina')).toBe(true);
+    expect(eventoPermitido(cancel.tipo, 'cocina')).toBe(true);
+    // Un cocinero NO puede cobrar (RS-Y-1): sanity.
+    expect(eventoPermitido('comanda_cobrada', 'cocina')).toBe(false);
   });
 });

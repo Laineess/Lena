@@ -2,7 +2,7 @@
 // sesión: cada evento propio avanza el reloj (ADR-003).
 import { v7 as uuidv7 } from 'uuid';
 import { EsquemaEvento, RelojHlc } from '@lena/shared';
-import type { Domicilio, EventoCable, TipoServicio } from '@lena/shared';
+import type { Domicilio, EventoCable, Rol, TipoServicio } from '@lena/shared';
 
 export interface Contexto {
   sucursalId: string;
@@ -10,6 +10,8 @@ export interface Contexto {
   dispositivoId: string;
   // El nodo del HLC debe ser único por dispositivo y estable.
   nodo: string;
+  // El rol del actor (mesero o cocina). Va en cada evento (RS-Y-1).
+  rol: Rol;
 }
 
 export interface LineaBorrador {
@@ -27,6 +29,22 @@ export class ConstructorEventos {
     this.reloj = new RelojHlc(ctx.nodo);
   }
 
+  // Avanza el reloj más allá de un HLC ya visto (ADR-003). Sin esto, un evento
+  // emitido por cocina —que reacciona a lo que le llegó por pull— podría
+  // ordenarse ANTES de aquello a lo que reacciona (p. ej. `comanda_lista` antes
+  // de que existan las líneas), sobre todo con relojes de tablet desfasados.
+  // MotorSync.jalar guarda los remotos pero no toca este reloj; por eso se
+  // observa explícitamente el máximo antes de emitir.
+  observar(hlc: string | null | undefined): void {
+    if (!hlc) return;
+    try {
+      this.reloj.recibir(hlc);
+    } catch {
+      // Deriva > límite o desbordamiento: no se adopta ese reloj, pero ahora()
+      // seguirá generando HLC crecientes por su cuenta.
+    }
+  }
+
   private base(comandaId: string, detalleId?: string) {
     return {
       id: uuidv7(),
@@ -34,7 +52,7 @@ export class ConstructorEventos {
       ...(detalleId ? { detalleId } : {}),
       sucursalId: this.ctx.sucursalId,
       actorId: this.ctx.actorId,
-      rolActor: 'mesero' as const,
+      rolActor: this.ctx.rol,
       dispositivoId: this.ctx.dispositivoId,
       hlc: this.reloj.ahora(),
       tsCliente: new Date().toISOString(),
@@ -98,5 +116,27 @@ export class ConstructorEventos {
       EsquemaEvento.parse({ ...this.base(comandaId), tipo: 'comanda_enviada', payload: { tipo: 'comanda_enviada' } }),
     );
     return eventos;
+  }
+
+  // ── Cocina (rol 'cocina') ──────────────────────────────────
+
+  // El botón ✓: marca lista toda la comanda (RF-F-6). comanda_lista mueve a
+  // 'lista' las líneas que estén pendientes; las ya listas no cambian.
+  marcarLista(comandaId: string): EventoCable {
+    return EsquemaEvento.parse({
+      ...this.base(comandaId),
+      tipo: 'comanda_lista',
+      payload: { tipo: 'comanda_lista' },
+    });
+  }
+
+  // "No puedo prepararla" (RF-F-13): cancela la línea SIN merma (la cancela
+  // cocina; generaMerma() lo distingue por el rol, RF-F-14).
+  cancelarLinea(comandaId: string, detalleId: string, motivo: string): EventoCable {
+    return EsquemaEvento.parse({
+      ...this.base(comandaId, detalleId),
+      tipo: 'linea_cancelada',
+      payload: { tipo: 'linea_cancelada', motivo },
+    });
   }
 }

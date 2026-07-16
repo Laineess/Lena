@@ -8,6 +8,7 @@ import { Boton } from '../ui/Boton';
 import { EstadoSync } from '../ui/EstadoSync';
 import { Stepper } from '../ui/Stepper';
 import type { Catalogo, DatosSesion, ProductoCat } from '../dominio/api';
+import { hlcMaximo } from '../dominio/cocina';
 import { asignarVoceo, configDispositivo } from '../dominio/dispositivo';
 import { ConstructorEventos } from '../dominio/eventos';
 import type { LineaBorrador } from '../dominio/eventos';
@@ -36,6 +37,7 @@ export function Captura({ sesion, catalogo, motor, enLinea, pendientes, onSincro
         actorId: sesion.sesion.usuarioId,
         dispositivoId: sesion.sesion.dispositivoId as string,
         nodo: disp.letra,
+        rol: sesion.sesion.rol,
       }),
     [sesion, disp.letra],
   );
@@ -93,6 +95,9 @@ export function Captura({ sesion, catalogo, motor, enLinea, pendientes, onSincro
       });
 
       if (adicion) {
+        // La adición debe ir DESPUÉS de todo lo que la comanda ya tiene: el
+        // reloj de este constructor es nuevo y no ha visto esos eventos (ADR-003).
+        constructor.observar(hlcMaximo(await motor.almacen.log(), adicion.comandaId));
         const eventos = constructor.agregarLineas(adicion.comandaId, lineas);
         for (const e of eventos) await motor.sync.crear(e);
         onSincronizar();
