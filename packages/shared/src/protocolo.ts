@@ -120,6 +120,7 @@ export type RazonRechazo =
   | 'deriva_de_reloj'
   | 'sucursal_ajena'
   | 'sin_turno_abierto'
+  | 'pagos_no_cuadran'
   | 'evento_malformado'
   | 'duplicado_con_otro_contenido';
 

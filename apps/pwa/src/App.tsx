@@ -1,15 +1,23 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import type { Comanda } from '@lena/shared';
 import { obtenerCatalogo } from './dominio/api';
 import type { Catalogo, DatosSesion } from './dominio/api';
 import { crearMotor, reanudar, tokenAcceso } from './dominio/motor';
 import type { Motor } from './dominio/motor';
 import { Captura } from './pantallas/Captura';
+import { Cobro } from './pantallas/Cobro';
 import { Cocina } from './pantallas/Cocina';
 import { Comandas } from './pantallas/Comandas';
 import { Ingreso } from './pantallas/Ingreso';
+import { Turno } from './pantallas/Turno';
 
 type Estado = 'cargando' | 'ingreso' | 'captura';
-type Vista = { v: 'captura' } | { v: 'comandas' } | { v: 'adicion'; comandaId: string; etiqueta: string };
+type Vista =
+  | { v: 'captura' }
+  | { v: 'comandas' }
+  | { v: 'adicion'; comandaId: string; etiqueta: string }
+  | { v: 'cobro'; comanda: Comanda }
+  | { v: 'turno' };
 
 export function App() {
   const [estado, setEstado] = useState<Estado>('cargando');
@@ -86,12 +94,32 @@ export function App() {
   if (vista.v === 'comandas') {
     return (
       <Comandas
+        sesion={sesion}
         motor={motor}
         token={sesion.acceso}
+        onCobrar={(comanda) => setVista({ v: 'cobro', comanda })}
         onAgregar={(comandaId, etiqueta) => setVista({ v: 'adicion', comandaId, etiqueta })}
         onVolver={() => setVista({ v: 'captura' })}
       />
     );
+  }
+
+  if (vista.v === 'cobro') {
+    return (
+      <Cobro
+        sesion={sesion}
+        comanda={vista.comanda}
+        motor={motor}
+        onListo={() => {
+          void sincronizar();
+          setVista({ v: 'comandas' });
+        }}
+      />
+    );
+  }
+
+  if (vista.v === 'turno') {
+    return <Turno token={sesion.acceso} onVolver={() => setVista({ v: 'captura' })} />;
   }
 
   return (
@@ -103,6 +131,7 @@ export function App() {
       pendientes={pendientes}
       onSincronizar={() => void sincronizar()}
       onVerComandas={() => setVista({ v: 'comandas' })}
+      onVerTurno={() => setVista({ v: 'turno' })}
       {...(vista.v === 'adicion'
         ? {
             adicion: { comandaId: vista.comandaId, etiqueta: vista.etiqueta },

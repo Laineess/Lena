@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { aEventoDominio, eventoPermitido, plegarComanda } from '@lena/shared';
+import { aEventoDominio, eventoPermitido, pagosCuadran, plegarComanda } from '@lena/shared';
 import { ConstructorEventos } from './eventos';
 
 const ctx = {
@@ -82,5 +82,33 @@ describe('ConstructorEventos', () => {
     expect(eventoPermitido(cancel.tipo, 'cocina')).toBe(true);
     // Un cocinero NO puede cobrar (RS-Y-1): sanity.
     expect(eventoPermitido('comanda_cobrada', 'cocina')).toBe(false);
+  });
+
+  it('cobro: ciclo entregada → pago → cobrada, con pagos que cuadran (RF-G-6)', () => {
+    const c = new ConstructorEventos(ctx);
+    const armada = c.armarComanda('para_llevar', [{ ...linea, cantidad: 2 }]); // 2 × $18 = $36
+    const cid = armada.comandaId;
+    const flujo = [
+      ...armada.eventos,
+      c.marcarEntregada(cid),
+      c.registrarPago(cid, { metodo: 'efectivo', monto: 3600, recibido: 5000 }),
+      c.cobrar(cid),
+    ];
+
+    for (const e of flujo) expect(eventoPermitido(e.tipo, e.rolActor)).toBe(true);
+
+    const comanda = plegarComanda(cid, flujo.map(aEventoDominio));
+    expect(comanda?.estado).toBe('cobrada');
+    expect(comanda?.total).toBe(3600);
+    expect(pagosCuadran(comanda!)).toBe(true);
+  });
+
+  it('cancelarComanda emite comanda_cancelada con motivo (RF-E-19)', () => {
+    const c = new ConstructorEventos(ctx);
+    const cid = '018f1a2b-0000-7000-8000-0000000000ef';
+    const ev = c.cancelarComanda(cid, 'el cliente se fue');
+    expect(ev.tipo).toBe('comanda_cancelada');
+    expect(ev.payload).toMatchObject({ motivo: 'el cliente se fue' });
+    expect(eventoPermitido(ev.tipo, 'mesero')).toBe(true);
   });
 });

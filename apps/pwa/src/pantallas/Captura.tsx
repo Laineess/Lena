@@ -23,6 +23,7 @@ interface Props {
   pendientes: number;
   onSincronizar: () => void;
   onVerComandas: () => void;
+  onVerTurno: () => void;
   // Modo adición (RF-E-7): agrega a una comanda existente en vez de crear una.
   adicion?: { comandaId: string; etiqueta: string };
   onListo?: () => void;
@@ -36,6 +37,7 @@ export function Captura({
   pendientes,
   onSincronizar,
   onVerComandas,
+  onVerTurno,
   adicion,
   onListo,
 }: Props) {
@@ -202,6 +204,9 @@ export function Captura({
           </div>
         )}
         <div className="flex items-center gap-3">
+          <button type="button" onClick={onVerTurno} aria-label="turno de caja" className="text-xl">
+            💵
+          </button>
           <button type="button" onClick={onVerComandas} aria-label="ver comandas" className="text-xl">
             ☰
           </button>

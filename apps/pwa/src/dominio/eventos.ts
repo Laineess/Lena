@@ -139,4 +139,49 @@ export class ConstructorEventos {
       payload: { tipo: 'linea_cancelada', motivo },
     });
   }
+
+  // ── Cobro (rol 'mesero'/'administrador') ───────────────────
+
+  // Entregada habilita el cobro (RF-E-22/23). El proyector solo la toma como
+  // válida si va después del último envío (05 §4.3, paso 6).
+  marcarEntregada(comandaId: string): EventoCable {
+    return EsquemaEvento.parse({
+      ...this.base(comandaId),
+      tipo: 'comanda_entregada',
+      payload: { tipo: 'comanda_entregada' },
+    });
+  }
+
+  // Un pago (RF-G-2/3/4). Varios pagos = pago dividido. `recibido` solo en
+  // efectivo, para el cambio. El id del evento ES el id del pago al materializar.
+  registrarPago(
+    comandaId: string,
+    pago: { metodo: 'efectivo' | 'tarjeta' | 'transferencia'; monto: number; recibido?: number },
+  ): EventoCable {
+    return EsquemaEvento.parse({
+      ...this.base(comandaId),
+      tipo: 'pago_registrado',
+      payload: { tipo: 'pago_registrado', ...pago },
+    });
+  }
+
+  // Cierra la comanda (RF-G-1). El servidor valida rol y estado; el cliente ya
+  // impide llegar aquí si pagos != total (RF-G-6) o no está entregada (RF-G-7).
+  cobrar(comandaId: string): EventoCable {
+    return EsquemaEvento.parse({
+      ...this.base(comandaId),
+      tipo: 'comanda_cobrada',
+      payload: { tipo: 'comanda_cobrada' },
+    });
+  }
+
+  // Cancela la comanda completa con motivo (RF-E-19). La advertencia de merma
+  // (RF-E-18) se calcula en el cliente con calcularMermaSiSeCancela.
+  cancelarComanda(comandaId: string, motivo: string): EventoCable {
+    return EsquemaEvento.parse({
+      ...this.base(comandaId),
+      tipo: 'comanda_cancelada',
+      payload: { tipo: 'comanda_cancelada', motivo },
+    });
+  }
 }

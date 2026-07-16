@@ -4,9 +4,18 @@
 // proyecciones que se RECONSTRUYEN plegando el log con @lena/shared: la misma
 // función pura que corre en el cliente (RNF-M-7). No hay dos verdades.
 import { and, eq, sql } from 'drizzle-orm';
-import { DERIVA_MAXIMA_MS, aEventoDominio, aPesos, eventoPermitido, parsearHlc, plegarComanda } from '@lena/shared';
+import {
+  DERIVA_MAXIMA_MS,
+  aEventoDominio,
+  aPesos,
+  eventoPermitido,
+  pagosCuadran,
+  parsearHlc,
+  plegarComanda,
+  totalPagado,
+} from '@lena/shared';
 import type { EventoCable, EventoRechazado, PeticionPush, RespuestaPush } from '@lena/shared';
-import { comanda, comandaDetalle, comandaDomicilio, comandaEvento, corteCaja } from '@lena/db';
+import { comanda, comandaDetalle, comandaDomicilio, comandaEvento, corteCaja, pago } from '@lena/db';
 import type { Db } from '../db';
 import { aDominio, aFila, mismoContenido } from './eventos';
 
@@ -71,7 +80,7 @@ export async function procesarPush(
 
       // Idempotencia: id repetido con mismo contenido = éxito; con otro
       // contenido = intento de reescribir el log (RF-J-3).
-      const aInsertar: EventoCable[] = [];
+      let aInsertar: EventoCable[] = [];
       for (const e of nuevos) {
         const prev = existentesPorId.get(e.id);
         if (prev) {
@@ -182,6 +191,26 @@ export async function procesarPush(
         });
       if (detalles.length) await tx.insert(comandaDetalle).values(detalles).onConflictDoNothing();
 
+      // RNF-I-2: no se cobra si los pagos no igualan el total. El cliente ya lo
+      // impide (RF-G-6), pero el servidor no confía en el cliente (RS-T-8). Se
+      // valida con un plegado en seco ANTES de insertar el cobro.
+      const cobros = aInsertar.filter((e) => e.tipo === 'comanda_cobrada');
+      if (cobros.length > 0) {
+        const seco = plegarComanda(cid, [...existentes, ...aInsertar.map(aEventoDominio)]);
+        if (seco && seco.estado === 'cobrada' && !pagosCuadran(seco)) {
+          for (const cobro of cobros) {
+            rechazados.push({
+              id: cobro.id,
+              razon: 'pagos_no_cuadran',
+              detalle: `pagos ${totalPagado(seco.pagos)} != total ${seco.total}`,
+            });
+          }
+          // Se quitan de la inserción: el cobro inválido no entra al log.
+          aInsertar = aInsertar.filter((e) => e.tipo !== 'comanda_cobrada');
+          if (aInsertar.length === 0) continue;
+        }
+      }
+
       const insertadas = await tx
         .insert(comandaEvento)
         .values(aInsertar.map(aFila))
@@ -225,6 +254,25 @@ export async function procesarPush(
           })
           .where(eq(comandaDetalle.id, l.id));
       }
+
+      // Materializar los pagos (append-only) desde los eventos pago_registrado.
+      // El corte de caja los suma para el efectivo esperado (RF-H-4).
+      const pagos = aInsertar
+        .filter((e) => e.tipo === 'pago_registrado')
+        .map((e) => {
+          const p = e.payload as { metodo: 'efectivo' | 'tarjeta' | 'transferencia'; monto: number; recibido?: number };
+          return {
+            id: e.id,
+            comandaId: cid,
+            metodo: p.metodo,
+            monto: aPesos(p.monto),
+            recibido: p.recibido !== undefined ? aPesos(p.recibido) : null,
+            // Cambio solo en efectivo (RF-G-4).
+            cambio: p.metodo === 'efectivo' && p.recibido !== undefined ? aPesos(p.recibido - p.monto) : null,
+            actorId: e.actorId,
+          };
+        });
+      if (pagos.length) await tx.insert(pago).values(pagos).onConflictDoNothing();
     }
   });
 

@@ -104,3 +104,44 @@ export async function marcarDisponibilidad(token: string, productoId: string, di
   });
   if (!res.ok) throw new ErrorApi(res.status, {});
 }
+
+// ── Turno de caja (RF-H) ─────────────────────────────────────
+
+export interface TurnoActual {
+  id: string;
+  fondoInicial: number;
+  abiertoAt: string;
+}
+
+export async function turnoActual(token: string): Promise<TurnoActual | null> {
+  const res = await fetch('/turno/actual', { headers: { authorization: `Bearer ${token}` } });
+  if (!res.ok) throw new ErrorApi(res.status, {});
+  return res.json() as Promise<TurnoActual | null>;
+}
+
+export function abrirTurno(token: string, fondoInicial: number): Promise<{ id: string }> {
+  return postJson('/turno/abrir', { fondoInicial }, token);
+}
+
+export interface CierreTurno {
+  esperado: number;
+  contado: number;
+  diferencia: number;
+  desglose: { efectivo: number; tarjeta: number; transferencia: number };
+}
+
+// Devuelve el cierre, o {comandasAbiertas} si el servidor bloqueó (RF-H-8).
+export async function cerrarTurno(
+  token: string,
+  contadoEfectivo: number,
+  motivo?: string,
+): Promise<{ ok: true; cierre: CierreTurno } | { ok: false; error: string; comandas?: unknown[] | undefined }> {
+  const res = await fetch('/turno/cerrar', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+    body: JSON.stringify({ contadoEfectivo, ...(motivo ? { motivo } : {}) }),
+  });
+  const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+  if (res.ok) return { ok: true, cierre: body as unknown as CierreTurno };
+  return { ok: false, error: String(body.error ?? 'error'), comandas: body.comandas as unknown[] | undefined };
+}

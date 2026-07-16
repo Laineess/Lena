@@ -29,8 +29,10 @@ export const owner = crearDb(process.env.DATABASE_URL);
 export const app = crearDb(process.env.DATABASE_URL_APP);
 
 export async function limpiar(): Promise<void> {
+  // corte_caja incluido: si un test deja un turno abierto, el índice único
+  // parcial (un solo turno abierto por sucursal) rompería el abrirTurno de otro.
   await owner.db.execute(sql`
-    TRUNCATE comanda_evento, comanda_detalle, merma_producto, pago, comanda
+    TRUNCATE comanda_evento, comanda_detalle, merma_producto, pago, comanda, corte_caja
     RESTART IDENTITY CASCADE
   `);
 }
