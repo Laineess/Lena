@@ -1,14 +1,18 @@
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { sembrarCredenciales, sesionMesero, tokenAcceso } from './auth/fixtures-auth';
 import { construirServidor } from './servidor';
 import type { Servidor } from './servidor';
 import { abrirTurno, cerrarConexiones, dispositivo, ID, limpiar } from './sync/fixtures';
 
 const uuid = () => randomUUID();
 let srv: Servidor;
+let auth: { authorization: string };
 
 beforeAll(async () => {
-  srv = await construirServidor();
+  srv = await construirServidor(undefined, { limiteGlobal: 100_000, limiteAuth: 100_000 });
+  await sembrarCredenciales();
+  auth = { authorization: `Bearer ${await tokenAcceso(sesionMesero())}` };
 });
 
 beforeEach(async () => {
@@ -44,6 +48,7 @@ describe('rutas HTTP', () => {
     const push = await srv.app.inject({
       method: 'POST',
       url: '/sync/push',
+      headers: auth,
       payload: { dispositivoId: ID.tabletA, eventos },
     });
     expect(push.statusCode).toBe(200);
@@ -54,15 +59,25 @@ describe('rutas HTTP', () => {
     const pull = await srv.app.inject({
       method: 'GET',
       url: `/sync/pull?sucursalId=${ID.sucursal}&desde=0`,
+      headers: auth,
     });
     expect(pull.statusCode).toBe(200);
     expect(pull.json().eventos).toHaveLength(2);
+  });
+
+  it('sin token, el sync devuelve 401 (RS-Z-4)', async () => {
+    const { eventos } = comandaNueva();
+    const push = await srv.app.inject({ method: 'POST', url: '/sync/push', payload: { dispositivoId: ID.tabletA, eventos } });
+    expect(push.statusCode).toBe(401);
+    const pull = await srv.app.inject({ method: 'GET', url: `/sync/pull?sucursalId=${ID.sucursal}` });
+    expect(pull.statusCode).toBe(401);
   });
 
   it('un cuerpo inválido devuelve 400', async () => {
     const push = await srv.app.inject({
       method: 'POST',
       url: '/sync/push',
+      headers: auth,
       payload: { dispositivoId: 'no-es-uuid', eventos: [] },
     });
     expect(push.statusCode).toBe(400);
@@ -95,7 +110,7 @@ describe('WebSocket + LISTEN/NOTIFY', () => {
     await new Promise((r) => setTimeout(r, 50));
 
     const { eventos } = comandaNueva();
-    await srv.app.inject({ method: 'POST', url: '/sync/push', payload: { dispositivoId: ID.tabletA, eventos } });
+    await srv.app.inject({ method: 'POST', url: '/sync/push', headers: auth, payload: { dispositivoId: ID.tabletA, eventos } });
 
     const msg = await Promise.race([
       aviso,

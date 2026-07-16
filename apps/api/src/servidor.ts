@@ -3,12 +3,15 @@
 // El servidor NO empuja eventos por el socket: solo avisa "hay novedades" y el
 // cliente jala. Un solo camino de entrega (el pull con cursor), imposible de
 // perder en una reconexión.
+import rateLimit from '@fastify/rate-limit';
 import websocket from '@fastify/websocket';
 import Fastify from 'fastify';
 import type { FastifyInstance } from 'fastify';
 import { EsquemaPull, EsquemaPush } from '@lena/shared';
 import type { MensajeServidor } from '@lena/shared';
 import { crearDb } from './db';
+import { requiereSesion } from './auth/middleware';
+import { registrarRutasAuth } from './auth/rutas';
 import { procesarPull } from './sync/pull';
 import { procesarPush } from './sync/push';
 
@@ -19,10 +22,23 @@ export interface Servidor {
   cerrar(): Promise<void>;
 }
 
-export async function construirServidor(urlApp?: string): Promise<Servidor> {
+export interface OpcionesServidor {
+  // RS-T-7: 100 req/min por dispositivo, 10/min en auth. Los tests los suben
+  // para no pelearse con el límite.
+  limiteGlobal?: number;
+  limiteAuth?: number;
+}
+
+export async function construirServidor(urlApp?: string, opts: OpcionesServidor = {}): Promise<Servidor> {
   const { db, sql } = crearDb(urlApp);
   const app = Fastify({ logger: false });
   await app.register(websocket);
+  // Límite por IP. En el VPS, Caddy pone la IP real en X-Forwarded-For (RS-T-1).
+  await app.register(rateLimit, {
+    global: true,
+    max: opts.limiteGlobal ?? 100,
+    timeWindow: '1 minute',
+  });
 
   // Sockets suscritos, agrupados por sucursal.
   const suscritos = new Map<string, Set<WebSocket>>();
@@ -51,15 +67,20 @@ export async function construirServidor(urlApp?: string): Promise<Servidor> {
 
   app.get('/health', async () => ({ ok: true }));
 
-  app.post('/sync/push', async (req, reply) => {
+  registrarRutasAuth(app, db, opts.limiteAuth ?? 10);
+
+  app.post('/sync/push', { preHandler: requiereSesion }, async (req, reply) => {
     const parsed = EsquemaPush.safeParse(req.body);
     if (!parsed.success) {
       return reply.code(400).send({ error: 'peticion_invalida', detalle: parsed.error.issues });
     }
-    const r = await procesarPush(db, parsed.data);
+    // RS-Z-2: la sucursal sale de la sesión, no del cliente. El admin (global)
+    // no se restringe; mesero/cocina solo empujan lo de su sucursal (RS-Z-6).
+    const sucursalPermitida = req.sesion?.sucursalId ?? undefined;
+    const r = await procesarPush(db, parsed.data, { sucursalPermitida });
 
     // Avisar a la(s) sucursal(es) tocada(s). El NOTIFY viaja por Postgres, así
-    // que también llega a otras instancias del API (multi-proceso, fase 3).
+    // que también llega a otras instancias del API (multi-proceso).
     const sucursales = new Set(parsed.data.eventos.map((e) => e.sucursalId));
     for (const sucursalId of sucursales) {
       await sql`SELECT pg_notify(${CANAL}, ${JSON.stringify({ sucursalId, seq: r.seq })})`;
@@ -67,12 +88,15 @@ export async function construirServidor(urlApp?: string): Promise<Servidor> {
     return r;
   });
 
-  app.get('/sync/pull', async (req, reply) => {
+  app.get('/sync/pull', { preHandler: requiereSesion }, async (req, reply) => {
     const parsed = EsquemaPull.safeParse(req.query);
     if (!parsed.success) {
       return reply.code(400).send({ error: 'peticion_invalida', detalle: parsed.error.issues });
     }
-    return procesarPull(db, parsed.data);
+    // RS-Z-3: un dispositivo solo jala eventos de su sucursal. Se ignora el
+    // sucursalId del cliente y se usa el de la sesión (el admin sí puede pedir).
+    const sucursalId = req.sesion?.sucursalId ?? parsed.data.sucursalId;
+    return procesarPull(db, { ...parsed.data, sucursalId });
   });
 
   app.get('/sync/ws', { websocket: true }, (socket) => {

@@ -24,7 +24,7 @@ export const ID = {
 
 // El dueño (lena) limpia y siembra el turno; el log es append-only para
 // lena_app, así que el borrado de pruebas NO puede correr como la app.
-const owner = crearDb(process.env.DATABASE_URL);
+export const owner = crearDb(process.env.DATABASE_URL);
 // La app (lena_app) es la que corre push/pull, con sus permisos reales.
 export const app = crearDb(process.env.DATABASE_URL_APP);
 

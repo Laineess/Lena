@@ -12,7 +12,9 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@fastify/rate-limit": "^11.1.0",
     "@fastify/websocket": "^11.0.2",
+    "@lena/auth": "workspace:*",
     "@lena/db": "workspace:*",
     "@lena/shared": "workspace:*",
     "drizzle-orm": "^0.38.3",

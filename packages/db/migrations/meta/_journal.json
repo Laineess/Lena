@@ -29,6 +29,13 @@
       "when": 1784185595412,
       "tag": "0003_merma_sin_envio",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1784190771192,
+      "tag": "0004_auth",
+      "breakpoints": true
     }
   ]
 }

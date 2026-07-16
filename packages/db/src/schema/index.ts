@@ -22,3 +22,4 @@ export * from './catalogo';
 export * from './caja';
 export * from './comanda';
 export * from './insumos';
+export * from './auth';

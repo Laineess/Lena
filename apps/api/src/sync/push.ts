@@ -21,15 +21,33 @@ function fecha(hlc: string): Date {
   return new Date(parsearHlc(hlc).fisico);
 }
 
-export async function procesarPush(db: Db, peticion: PeticionPush): Promise<RespuestaPush> {
+export interface OpcionesPush {
+  // Sucursal de la sesión (RS-Z-2). Si se da, un evento de otra sucursal se
+  // rechaza: un dispositivo solo empuja lo suyo (RS-Z-6, RS-Y-2).
+  sucursalPermitida?: string | undefined;
+}
+
+export async function procesarPush(
+  db: Db,
+  peticion: PeticionPush,
+  opciones: OpcionesPush = {},
+): Promise<RespuestaPush> {
   const rechazados: EventoRechazado[] = [];
   const aceptados: string[] = [];
   const folios: { comandaId: string; folio: number }[] = [];
   const ahora = Date.now();
 
-  // Filtrado previo a la transacción: deriva de reloj y autorización.
+  // Filtrado previo a la transacción: sucursal, deriva de reloj y autorización.
   const porComanda = new Map<string, EventoCable[]>();
   for (const e of peticion.eventos) {
+    if (opciones.sucursalPermitida && e.sucursalId !== opciones.sucursalPermitida) {
+      rechazados.push({
+        id: e.id,
+        razon: 'sucursal_ajena',
+        detalle: 'el evento no pertenece a la sucursal de la sesión',
+      });
+      continue;
+    }
     const fisico = parsearHlc(e.hlc).fisico;
     if (fisico - ahora > DERIVA_MAXIMA_MS) {
       rechazados.push({

@@ -74,6 +74,9 @@ export const dispositivo = pgTable('dispositivo', {
    * A-1, A-2… (09. Diseño de interfaz §4.2). Única por sucursal.
    */
   letra: text('letra').notNull(),
+  /** Credencial del dispositivo (Argon2id). El PIN autentica a la persona; esto
+   * autentica al lugar (ADR-007). NULL hasta que el admin lo registre. */
+  tokenHash: text('token_hash'),
   activo: boolean('activo').notNull().default(true),
   /** Diagnóstico (RNF-O-5). El cursor real de sync vive en el cliente. */
   ultimoSeq: bigint('ultimo_seq', { mode: 'number' }).notNull().default(0),
