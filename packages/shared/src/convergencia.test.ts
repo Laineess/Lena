@@ -40,23 +40,36 @@ const arbLog = fc
       }),
       { minLength: 1, maxLength: 3 },
     ),
-    // Qué le pasa después a la comanda
+    // Qué le pasa después a la comanda.
+    //
+    // La versión anterior de este generador NO producía linea_modificada,
+    // linea_eliminada, linea_lista ni preparacion_iniciada. Resultado: 125 mil
+    // ejecuciones que jamás tocaron esos caminos, y una cobertura que decía
+    // 85% mientras RF-E-4 y RF-E-5 no tenían ni una prueba.
+    //
+    // Pasar un property-based test no vale nada si el generador no ejercita
+    // el código.
     acciones: fc.array(
       fc.constantFrom(
         'enviar' as const,
         'lista' as const,
+        'lista_una' as const,
+        'empezar' as const,
         'entregar' as const,
+        'modificar' as const,
+        'eliminar' as const,
         'cancelar_linea' as const,
         'cancelar_comanda' as const,
         'cobrar' as const,
         'agregar_mas' as const,
       ),
-      { minLength: 0, maxLength: 8 },
+      { minLength: 0, maxLength: 10 },
     ),
     lineaObjetivo: fc.integer({ min: 0, max: LINEAS.length - 1 }),
     rolCancela: fc.constantFrom('mesero' as const, 'cocina' as const, 'administrador' as const),
+    nuevaCantidad: fc.integer({ min: 1, max: 30 }),
   })
-  .map(({ tipoServicio, lineas, acciones, lineaObjetivo, rolCancela }) => {
+  .map(({ tipoServicio, lineas, acciones, lineaObjetivo, rolCancela, nuevaCantidad }) => {
     const eventos: Evento[] = [];
     let n = 0;
     const push = (payload: PayloadEvento, detalleId?: string, rolActor: Rol = 'mesero') => {
@@ -103,8 +116,26 @@ const arbLog = fc
         case 'lista':
           push({ tipo: 'comanda_lista' }, undefined, 'cocina');
           break;
+        case 'lista_una':
+          // RF-F-6: cocina marca UNA línea lista, no la comanda entera.
+          push({ tipo: 'linea_lista' }, LINEAS[lineaObjetivo], 'cocina');
+          break;
+        case 'empezar':
+          push({ tipo: 'preparacion_iniciada' }, undefined, 'cocina');
+          break;
         case 'entregar':
           push({ tipo: 'comanda_entregada' });
+          break;
+        case 'modificar':
+          // RF-E-4: cambiar cantidad o nota.
+          push(
+            { tipo: 'linea_modificada', cantidad: nuevaCantidad, notas: 'sin cebolla' },
+            LINEAS[lineaObjetivo],
+          );
+          break;
+        case 'eliminar':
+          // RF-E-5: quitar una línea. Solo aplica en borrador.
+          push({ tipo: 'linea_eliminada' }, LINEAS[lineaObjetivo]);
           break;
         case 'cancelar_linea':
           push({ tipo: 'linea_cancelada', motivo: 'prueba' }, LINEAS[lineaObjetivo], rolCancela);

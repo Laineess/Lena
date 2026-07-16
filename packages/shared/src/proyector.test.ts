@@ -3,11 +3,12 @@ import { RelojHlc } from './hlc';
 import { generaMerma } from './maquina-estados';
 import {
   calcularMermaSiSeCancela,
+  estadoLineaDe,
   pagosCuadran,
   plegarComanda,
 } from './proyector';
 import type { Evento, PayloadEvento, Rol } from './tipos';
-import { aCentavos, aPesos } from './tipos';
+import { aCentavos, aPesos, formatearMoneda } from './tipos';
 
 // ── Constructor de eventos para las pruebas ──────────────────
 
@@ -287,6 +288,195 @@ describe('RF-G-3 / RF-G-6 — pago dividido', () => {
   });
 });
 
+// ── Los caminos que la cobertura destapó como ciegos ─────────
+
+describe('RF-E-4 — modificar una línea', () => {
+  it('cambiar la cantidad recalcula el total', () => {
+    const ev = constructor();
+    const c = plegarComanda(COMANDA, [
+      ev({ tipo: 'comanda_creada', tipoServicio: 'para_llevar' }),
+      ev(PASTOR, { detalleId: 'l-1' }), // 3 × $18 = $54
+      ev({ tipo: 'linea_modificada', cantidad: 5 }, { detalleId: 'l-1' }),
+    ])!;
+    expect(c.lineas[0]!.cantidad).toBe(5);
+    expect(c.total).toBe(9000);
+  });
+
+  it('cambiar solo la nota conserva la cantidad', () => {
+    const ev = constructor();
+    const c = plegarComanda(COMANDA, [
+      ev({ tipo: 'comanda_creada', tipoServicio: 'para_llevar' }),
+      ev(PASTOR, { detalleId: 'l-1' }),
+      ev({ tipo: 'linea_modificada', notas: 'sin cebolla' }, { detalleId: 'l-1' }),
+    ])!;
+    expect(c.lineas[0]!.notas).toBe('sin cebolla');
+    expect(c.lineas[0]!.cantidad).toBe(3);
+  });
+
+  it('gana la modificación con HLC mayor (last-write-wins)', () => {
+    // Es una cantidad, no dinero histórico: aquí LWW es correcto.
+    const ev = constructor();
+    const c = plegarComanda(COMANDA, [
+      ev({ tipo: 'comanda_creada', tipoServicio: 'para_llevar' }),
+      ev(PASTOR, { detalleId: 'l-1' }),
+      ev({ tipo: 'linea_modificada', cantidad: 5 }, { detalleId: 'l-1' }),
+      ev({ tipo: 'linea_modificada', cantidad: 2 }, { detalleId: 'l-1' }),
+    ])!;
+    expect(c.lineas[0]!.cantidad).toBe(2);
+  });
+
+  it('NO se modifica una línea ya cancelada', () => {
+    const ev = constructor();
+    const c = plegarComanda(COMANDA, [
+      ev({ tipo: 'comanda_creada', tipoServicio: 'para_llevar' }),
+      ev(PASTOR, { detalleId: 'l-1' }),
+      ev({ tipo: 'comanda_enviada' }),
+      ev({ tipo: 'linea_cancelada', motivo: 'x' }, { detalleId: 'l-1' }),
+      ev({ tipo: 'linea_modificada', cantidad: 99 }, { detalleId: 'l-1' }),
+    ])!;
+    expect(c.lineas[0]!.cantidad).toBe(3);
+    expect(c.total).toBe(0);
+  });
+});
+
+describe('RF-E-5 — eliminar una línea', () => {
+  it('se elimina en borrador', () => {
+    const ev = constructor();
+    const c = plegarComanda(COMANDA, [
+      ev({ tipo: 'comanda_creada', tipoServicio: 'para_llevar' }),
+      ev(PASTOR, { detalleId: 'l-1' }),
+      ev({ tipo: 'linea_eliminada' }, { detalleId: 'l-1' }),
+    ])!;
+    expect(c.lineas).toHaveLength(0);
+    expect(c.total).toBe(0);
+  });
+
+  it('NO se elimina una línea ya enviada a cocina', () => {
+    // Una línea enviada se CANCELA (y puede mermar), no se borra. Borrarla
+    // haría desaparecer la pérdida — que es el problema de la Visión §1.
+    const ev = constructor();
+    const c = plegarComanda(COMANDA, [
+      ev({ tipo: 'comanda_creada', tipoServicio: 'para_llevar' }),
+      ev(PASTOR, { detalleId: 'l-1' }),
+      ev({ tipo: 'comanda_enviada' }),
+      ev({ tipo: 'linea_eliminada' }, { detalleId: 'l-1' }),
+    ])!;
+    expect(c.lineas).toHaveLength(1);
+    expect(c.total).toBe(5400);
+  });
+});
+
+describe('RF-F-6 — cocina marca UNA línea lista', () => {
+  it('solo esa línea cambia; la comanda sigue enviada', () => {
+    const ev = constructor();
+    const c = plegarComanda(COMANDA, [
+      ev({ tipo: 'comanda_creada', tipoServicio: 'mesa', mesaId: 'm-4' }),
+      ev(PASTOR, { detalleId: 'l-1' }),
+      ev({ ...PASTOR, cantidad: 2 }, { detalleId: 'l-2' }),
+      ev({ tipo: 'comanda_enviada' }),
+      ev({ tipo: 'linea_lista' }, { detalleId: 'l-1', rolActor: 'cocina' }),
+    ])!;
+    expect(c.lineas.find((l) => l.id === 'l-1')!.estado).toBe('lista');
+    expect(c.lineas.find((l) => l.id === 'l-2')!.estado).toBe('pendiente');
+    // Basta una línea pendiente para que la comanda no esté lista.
+    expect(c.estado).toBe('enviada');
+  });
+
+  it('cuando TODAS las líneas están listas, la comanda queda lista', () => {
+    const ev = constructor();
+    const c = plegarComanda(COMANDA, [
+      ev({ tipo: 'comanda_creada', tipoServicio: 'mesa', mesaId: 'm-4' }),
+      ev(PASTOR, { detalleId: 'l-1' }),
+      ev({ ...PASTOR, cantidad: 2 }, { detalleId: 'l-2' }),
+      ev({ tipo: 'comanda_enviada' }),
+      ev({ tipo: 'linea_lista' }, { detalleId: 'l-1', rolActor: 'cocina' }),
+      ev({ tipo: 'linea_lista' }, { detalleId: 'l-2', rolActor: 'cocina' }),
+    ])!;
+    expect(c.estado).toBe('lista');
+  });
+
+  it('no se marca lista una línea aún en borrador', () => {
+    const ev = constructor();
+    const c = plegarComanda(COMANDA, [
+      ev({ tipo: 'comanda_creada', tipoServicio: 'para_llevar' }),
+      ev(PASTOR, { detalleId: 'l-1' }),
+      ev({ tipo: 'linea_lista' }, { detalleId: 'l-1', rolActor: 'cocina' }),
+    ])!;
+    expect(c.lineas[0]!.estado).toBe('borrador');
+  });
+});
+
+describe('RF-F-3 — preparación iniciada (reservado, sin UI en el MVP)', () => {
+  it('las líneas pendientes pasan a en_preparacion', () => {
+    const ev = constructor();
+    const c = plegarComanda(COMANDA, [
+      ev({ tipo: 'comanda_creada', tipoServicio: 'para_llevar' }),
+      ev(PASTOR, { detalleId: 'l-1' }),
+      ev({ tipo: 'comanda_enviada' }),
+      ev({ tipo: 'preparacion_iniciada' }, { rolActor: 'cocina' }),
+    ])!;
+    expect(c.lineas[0]!.estado).toBe('en_preparacion');
+    expect(c.estado).toBe('en_preparacion');
+  });
+
+  it('y sí generan merma si se cancelan', () => {
+    const ev = constructor();
+    const c = plegarComanda(COMANDA, [
+      ev({ tipo: 'comanda_creada', tipoServicio: 'para_llevar' }),
+      ev(PASTOR, { detalleId: 'l-1' }),
+      ev({ tipo: 'comanda_enviada' }),
+      ev({ tipo: 'preparacion_iniciada' }, { rolActor: 'cocina' }),
+    ])!;
+    expect(calcularMermaSiSeCancela(c, 'mesero').costoTotal).toBe(5400);
+  });
+});
+
+describe('estadoLineaDe', () => {
+  it('devuelve el estado de una línea existente', () => {
+    const ev = constructor();
+    const c = plegarComanda(COMANDA, [
+      ev({ tipo: 'comanda_creada', tipoServicio: 'para_llevar' }),
+      ev(PASTOR, { detalleId: 'l-1' }),
+      ev({ tipo: 'comanda_enviada' }),
+    ])!;
+    expect(estadoLineaDe(c, 'l-1')).toBe('pendiente');
+  });
+
+  it('devuelve null si la línea no existe', () => {
+    const ev = constructor();
+    const c = plegarComanda(COMANDA, [
+      ev({ tipo: 'comanda_creada', tipoServicio: 'para_llevar' }),
+    ])!;
+    expect(estadoLineaDe(c, 'no-existe')).toBeNull();
+  });
+});
+
+describe('eventos sin detalleId no rompen nada', () => {
+  it('linea_agregada sin detalleId se ignora', () => {
+    const ev = constructor();
+    const c = plegarComanda(COMANDA, [
+      ev({ tipo: 'comanda_creada', tipoServicio: 'para_llevar' }),
+      ev(PASTOR), // sin detalleId
+    ])!;
+    expect(c.lineas).toHaveLength(0);
+  });
+
+  it('eventos de otra comanda se ignoran', () => {
+    const ev = constructor();
+    const ajeno: Evento = { ...ev(PASTOR, { detalleId: 'x' }), comandaId: 'otra' };
+    const c = plegarComanda(COMANDA, [
+      ev({ tipo: 'comanda_creada', tipoServicio: 'para_llevar' }),
+      ajeno,
+    ])!;
+    expect(c.lineas).toHaveLength(0);
+  });
+
+  it('sin comanda_creada no hay comanda, aunque haya líneas', () => {
+    const ev = constructor();
+    expect(plegarComanda(COMANDA, [ev(PASTOR, { detalleId: 'l-1' })])).toBeNull();
+  });
+});
+
 // ── Dinero: RNF-I-8 ──────────────────────────────────────────
 
 describe('RNF-I-8 — nada de punto flotante', () => {
@@ -310,6 +500,24 @@ describe('RNF-I-8 — nada de punto flotante', () => {
 
   it('aPesos rechaza centavos no enteros', () => {
     expect(() => aPesos(18.5)).toThrow();
+  });
+
+  it('aCentavos rechaza basura', () => {
+    expect(() => aCentavos('no es un número')).toThrow();
+    expect(() => aCentavos(Number.NaN)).toThrow();
+    expect(() => aCentavos(Number.POSITIVE_INFINITY)).toThrow();
+  });
+
+  it('los montos negativos se formatean bien', () => {
+    // No hay totales negativos hoy, pero un ajuste de corte sí puede serlo.
+    expect(aPesos(-1850)).toBe('-18.50');
+    expect(aPesos(-5)).toBe('-0.05');
+    expect(formatearMoneda(-1850)).toBe('$-18.50');
+  });
+
+  it('acepta número además de string', () => {
+    expect(aCentavos(18.5)).toBe(1850);
+    expect(aCentavos(0)).toBe(0);
   });
 
   it('un total grande no pierde precisión', () => {

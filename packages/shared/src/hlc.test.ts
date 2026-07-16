@@ -134,6 +134,40 @@ describe('validación del nodo', () => {
   });
 });
 
+describe('guardas de desbordamiento', () => {
+  // Estas guardas protegen algo que no es obvio: el formato tiene ANCHO FIJO
+  // (4 dígitos hex para `logico`). Si el contador pasara de 0xffff sin
+  // detenerse, formatearHlc() emitiría 5 dígitos y el orden lexicográfico
+  // —la base de todo el sistema— se rompería en silencio.
+  //
+  // Es preferible un error ruidoso a un HLC que ordena mal.
+
+  it('ahora() se detiene antes de romper el formato', () => {
+    const reloj = relojFalso();
+    const hlc = new RelojHlc('A', reloj.ahora); // reloj CONGELADO
+    // 65536 llamadas caben (logico va de 0 a 0xffff)
+    for (let i = 0; i <= 0xffff; i++) hlc.ahora();
+    expect(hlc.estado().logico).toBe(0xffff);
+    // La 65537 desborda
+    expect(() => hlc.ahora()).toThrow(/[Dd]esbordamiento/);
+  });
+
+  it('el formato conserva el ancho fijo hasta el máximo', () => {
+    const enElLimite = formatearHlc({ fisico: 1_700_000_000_000, logico: 0xffff, nodo: 'A' });
+    const partes = enElLimite.split('-');
+    expect(partes[1]).toHaveLength(4);
+    expect(parsearHlc(enElLimite).logico).toBe(0xffff);
+  });
+
+  it('recibir() también se detiene', () => {
+    const reloj = relojFalso();
+    const hlc = new RelojHlc('A', reloj.ahora);
+    // Un remoto con el contador al tope, mismo milisegundo
+    const remoto = formatearHlc({ fisico: reloj.ahora(), logico: 0xffff, nodo: 'B' });
+    expect(() => hlc.recibir(remoto)).toThrow(/[Dd]esbordamiento/);
+  });
+});
+
 describe('propiedades (property-based)', () => {
   const arbHlc = fc
     .record({
