@@ -17,10 +17,15 @@ export interface Motor {
   almacen: AlmacenDexie;
 }
 
-export function crearMotor(sesion: DatosSesion): Motor {
+// Fija el token de la sesión (y persiste el refresh). El admin usa solo esto:
+// no tiene sync porque no levanta comandas, consulta reportes del servidor.
+export function fijarToken(sesion: DatosSesion): void {
   acceso = sesion.acceso;
   localStorage.setItem('lena.refresh', sesion.refresh);
+}
 
+export function crearMotor(sesion: DatosSesion): Motor {
+  fijarToken(sesion);
   const almacen = new AlmacenDexie();
   const transporte = new TransporteHttp('', tokenAcceso);
   const sync = new MotorSync(almacen, transporte, {

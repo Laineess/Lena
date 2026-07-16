@@ -13,6 +13,8 @@ import type { MensajeServidor } from '@lena/shared';
 import { crearDb } from './db';
 import { requiereSesion } from './auth/middleware';
 import { registrarRutasAuth } from './auth/rutas';
+import { registrarRutasGestion } from './admin/gestion';
+import { registrarRutasAdmin } from './admin/reportes';
 import { registrarRutasCatalogo } from './catalogo/rutas';
 import { registrarRutasComandas } from './comandas/rutas';
 import { registrarRutasTurno } from './turno/rutas';
@@ -75,6 +77,8 @@ export async function construirServidor(urlApp?: string, opts: OpcionesServidor 
   registrarRutasCatalogo(app, db);
   registrarRutasComandas(app, db);
   registrarRutasTurno(app, db);
+  registrarRutasAdmin(app, db);
+  registrarRutasGestion(app, db);
 
   app.post('/sync/push', { preHandler: requiereSesion }, async (req, reply) => {
     const parsed = EsquemaPush.safeParse(req.body);

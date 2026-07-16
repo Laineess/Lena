@@ -2,8 +2,9 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Comanda } from '@lena/shared';
 import { obtenerCatalogo } from './dominio/api';
 import type { Catalogo, DatosSesion } from './dominio/api';
-import { crearMotor, reanudar, tokenAcceso } from './dominio/motor';
+import { crearMotor, fijarToken, reanudar, tokenAcceso } from './dominio/motor';
 import type { Motor } from './dominio/motor';
+import { AdminEscritorio } from './pantallas/AdminEscritorio';
 import { Captura } from './pantallas/Captura';
 import { Cobro } from './pantallas/Cobro';
 import { Cocina } from './pantallas/Cocina';
@@ -11,7 +12,7 @@ import { Comandas } from './pantallas/Comandas';
 import { Ingreso } from './pantallas/Ingreso';
 import { Turno } from './pantallas/Turno';
 
-type Estado = 'cargando' | 'ingreso' | 'captura';
+type Estado = 'cargando' | 'ingreso' | 'captura' | 'admin';
 type Vista =
   | { v: 'captura' }
   | { v: 'comandas' }
@@ -29,8 +30,14 @@ export function App() {
   const motorRef = useRef<Motor | null>(null);
 
   const entrar = useCallback(async (datos: DatosSesion) => {
-    motorRef.current = crearMotor(datos);
     setSesion(datos);
+    // El admin va al escritorio: sin sync, sin catálogo local (RF-C-4).
+    if (datos.sesion.rol === 'administrador') {
+      fijarToken(datos);
+      setEstado('admin');
+      return;
+    }
+    motorRef.current = crearMotor(datos);
     const cat = await obtenerCatalogo(datos.acceso);
     setCatalogo(cat);
     setEstado('captura');
@@ -70,6 +77,18 @@ export function App() {
 
   if (estado === 'cargando') {
     return <div className="flex h-full items-center justify-center text-piedra-500">Cargando…</div>;
+  }
+  // El admin: escritorio, sin motor ni catálogo local.
+  if (estado === 'admin' && sesion) {
+    return (
+      <AdminEscritorio
+        token={sesion.acceso}
+        onSalir={() => {
+          setSesion(null);
+          setEstado('ingreso');
+        }}
+      />
+    );
   }
   if (estado === 'ingreso' || !sesion || !catalogo) {
     return <Ingreso onIngreso={entrar} />;

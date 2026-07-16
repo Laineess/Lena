@@ -1,8 +1,9 @@
 // Ingreso con PIN (09 §3). 3 toques: usuario → PIN → ✓ (RNF-U-1). El teclado
 // es numérico propio; nunca aparece un teclado alfanumérico en el flujo.
 import { useEffect, useState } from 'react';
-import { ErrorApi, loginPin, usuariosDeDispositivo } from '../dominio/api';
+import { ErrorApi, loginAdmin, loginPin, usuariosDeDispositivo } from '../dominio/api';
 import type { DatosSesion, Usuario } from '../dominio/api';
+import { Boton } from '../ui/Boton';
 import { configDispositivo } from '../dominio/dispositivo';
 
 const LARGO_PIN = 6;
@@ -14,6 +15,21 @@ export function Ingreso({ onIngreso }: { onIngreso: (s: DatosSesion) => void }) 
   const [pin, setPin] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [ocupado, setOcupado] = useState(false);
+  const [modoAdmin, setModoAdmin] = useState(false);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+
+  async function entrarAdmin() {
+    setOcupado(true);
+    setError(null);
+    try {
+      onIngreso(await loginAdmin({ email: email.trim(), password }));
+    } catch {
+      setError('Credenciales inválidas');
+    } finally {
+      setOcupado(false);
+    }
+  }
 
   useEffect(() => {
     // La lista se cachea para el ingreso offline (RS-A-3); aquí se trae en línea.
@@ -28,6 +44,47 @@ export function Ingreso({ onIngreso }: { onIngreso: (s: DatosSesion) => void }) 
         else setError('Sin conexión y sin lista de usuarios en caché');
       });
   }, [disp.dispositivoId, disp.tokenDispositivo]);
+
+  if (modoAdmin) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-4 p-6">
+        <h1 className="text-h1 font-bold text-brasa-700">🔥 Leña · Admin</h1>
+        {error && <p className="text-error">{error}</p>}
+        <input
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          placeholder="Correo"
+          className="w-full max-w-xs rounded-md border border-piedra-300 px-3 py-3"
+          autoFocus
+        />
+        <input
+          type="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          placeholder="Contraseña"
+          className="w-full max-w-xs rounded-md border border-piedra-300 px-3 py-3"
+        />
+        <Boton
+          onClick={() => void entrarAdmin()}
+          disabled={ocupado || !email || !password}
+          className="h-12 w-full max-w-xs"
+        >
+          Entrar
+        </Boton>
+        <button
+          type="button"
+          onClick={() => {
+            setModoAdmin(false);
+            setError(null);
+          }}
+          className="text-sm text-piedra-500"
+        >
+          ‹ Volver al PIN
+        </button>
+      </div>
+    );
+  }
 
   async function enviar(pinFinal: string) {
     if (!sel) return;
@@ -78,6 +135,9 @@ export function Ingreso({ onIngreso }: { onIngreso: (s: DatosSesion) => void }) 
           ))}
           {usuarios === null && !error && <p className="col-span-2 text-center text-piedra-500">Cargando…</p>}
         </div>
+        <button type="button" onClick={() => setModoAdmin(true)} className="text-sm text-piedra-500 underline">
+          Soy administrador
+        </button>
       </div>
     );
   }

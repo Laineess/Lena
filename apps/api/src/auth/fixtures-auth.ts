@@ -49,3 +49,8 @@ export function tokenAcceso(sesion: Sesion): Promise<string> {
 export function sesionMesero(): Sesion {
   return { usuarioId: ID.mesero1, rol: 'mesero', sucursalId: ID.sucursal, dispositivoId: ID.tabletA };
 }
+
+// El admin: alcance global (sucursalId null), sin dispositivo (RF-C-4).
+export function sesionAdmin(): Sesion {
+  return { usuarioId: CRED.adminId, rol: 'administrador', sucursalId: null, dispositivoId: null };
+}
