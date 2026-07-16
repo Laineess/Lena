@@ -128,10 +128,7 @@ const arbLog = fc
           break;
         case 'modificar':
           // RF-E-4: cambiar cantidad o nota.
-          push(
-            { tipo: 'linea_modificada', cantidad: nuevaCantidad, notas: 'sin cebolla' },
-            LINEAS[lineaObjetivo],
-          );
+          push({ tipo: 'linea_modificada', cantidad: nuevaCantidad, notas: 'sin cebolla' }, LINEAS[lineaObjetivo]);
           break;
         case 'eliminar':
           // RF-E-5: quitar una línea. Solo aplica en borrador.
@@ -291,9 +288,7 @@ describe('RNF-I-6 — convergencia', () => {
         );
         if (!primerTerminal) return c.estado !== 'cobrada' && c.estado !== 'cancelada';
 
-        return primerTerminal.tipo === 'comanda_cobrada'
-          ? c.estado === 'cobrada'
-          : c.estado === 'cancelada';
+        return primerTerminal.tipo === 'comanda_cobrada' ? c.estado === 'cobrada' : c.estado === 'cancelada';
       }),
       { numRuns: 3000 },
     );
@@ -310,9 +305,7 @@ describe('RNF-I-6 — convergencia', () => {
         if (c.estado !== 'cancelada' && c.estado !== 'cobrada') return true;
 
         const ordenados = ordenarEventos(eventos);
-        const cierre = ordenados.findIndex(
-          (e) => e.tipo === 'comanda_cobrada' || e.tipo === 'comanda_cancelada',
-        );
+        const cierre = ordenados.findIndex((e) => e.tipo === 'comanda_cobrada' || e.tipo === 'comanda_cancelada');
         if (cierre === -1) return true;
 
         const tardias = ordenados
@@ -320,9 +313,7 @@ describe('RNF-I-6 — convergencia', () => {
           .filter((e) => e.tipo === 'linea_agregada' && e.detalleId)
           .map((e) => e.detalleId!);
 
-        return c.lineas
-          .filter((l) => tardias.includes(l.id))
-          .every((l) => l.estado === 'cancelada');
+        return c.lineas.filter((l) => tardias.includes(l.id)).every((l) => l.estado === 'cancelada');
       }),
       { numRuns: 3000 },
     );
@@ -334,16 +325,12 @@ describe('RNF-I-6 — convergencia', () => {
         const c = plegarComanda(COMANDA, eventos);
         if (!c) return true;
         const canceladas = new Set(
-          eventos
-            .filter((e) => e.tipo === 'linea_cancelada' && e.detalleId)
-            .map((e) => e.detalleId!),
+          eventos.filter((e) => e.tipo === 'linea_cancelada' && e.detalleId).map((e) => e.detalleId!),
         );
         // Salvo que la comanda entera se haya cobrado antes (la cancelación
         // pierde contra 'cobrada').
         if (c.estado === 'cobrada') return true;
-        return c.lineas
-          .filter((l) => canceladas.has(l.id))
-          .every((l) => l.estado === 'cancelada');
+        return c.lineas.filter((l) => canceladas.has(l.id)).every((l) => l.estado === 'cancelada');
       }),
       { numRuns: 2000 },
     );

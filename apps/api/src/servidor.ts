@@ -147,7 +147,6 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const puerto = Number(process.env.API_PORT ?? 3000);
   const srv = await construirServidor();
   await srv.app.listen({ port: puerto, host: '0.0.0.0' });
-  // eslint-disable-next-line no-console
   console.log(`API de sincronización en :${puerto}`);
   for (const sig of ['SIGINT', 'SIGTERM'] as const) {
     process.on(sig, async () => {

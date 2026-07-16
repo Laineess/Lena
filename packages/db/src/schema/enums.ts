@@ -34,13 +34,7 @@ export const estadoComanda = pgEnum('estado_comanda', [
  * cocina tiene un solo botón (✓ lista). Se conserva porque agregarlo después
  * sería una migración y quitarlo hoy no ahorra nada.
  */
-export const estadoLinea = pgEnum('estado_linea', [
-  'borrador',
-  'pendiente',
-  'en_preparacion',
-  'lista',
-  'cancelada',
-]);
+export const estadoLinea = pgEnum('estado_linea', ['borrador', 'pendiente', 'en_preparacion', 'lista', 'cancelada']);
 
 /** Log append-only. Fuente de verdad (ADR-002). */
 export const tipoEvento = pgEnum('tipo_evento', [
@@ -66,24 +60,10 @@ export const metodoPago = pgEnum('metodo_pago', ['efectivo', 'tarjeta', 'transfe
 
 export const estadoCorte = pgEnum('estado_corte', ['abierto', 'cerrado']);
 
-export const categoriaGasto = pgEnum('categoria_gasto', [
-  'insumo',
-  'servicio',
-  'sueldo',
-  'renta',
-  'otro',
-]);
+export const categoriaGasto = pgEnum('categoria_gasto', ['insumo', 'servicio', 'sueldo', 'renta', 'otro']);
 
 // ── Insumos (Fase 2) ─────────────────────────────────────────
 
-export const unidadMedida = pgEnum('unidad_medida', [
-  'kg',
-  'g',
-  'l',
-  'ml',
-  'pza',
-  'caja',
-  'manojo',
-]);
+export const unidadMedida = pgEnum('unidad_medida', ['kg', 'g', 'l', 'ml', 'pza', 'caja', 'manojo']);
 
 export const tipoConteo = pgEnum('tipo_conteo', ['apertura', 'cierre']);

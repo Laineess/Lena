@@ -1,13 +1,6 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import {
-  compararHlc,
-  DERIVA_MAXIMA_MS,
-  ErrorDerivaReloj,
-  formatearHlc,
-  parsearHlc,
-  RelojHlc,
-} from './hlc';
+import { compararHlc, DERIVA_MAXIMA_MS, ErrorDerivaReloj, formatearHlc, parsearHlc, RelojHlc } from './hlc';
 
 /** Reloj de pared controlable: sin esto las pruebas dependerían del tiempo real. */
 function relojFalso(inicio = 1_700_000_000_000) {
@@ -210,9 +203,7 @@ describe('propiedades (property-based)', () => {
         const a = [...hlcs].sort(compararHlc);
         const b = [...hlcs].reverse().sort(compararHlc);
         const c = [...hlcs].sort(() => Math.random() - 0.5).sort(compararHlc);
-        return (
-          JSON.stringify(a) === JSON.stringify(b) && JSON.stringify(b) === JSON.stringify(c)
-        );
+        return JSON.stringify(a) === JSON.stringify(b) && JSON.stringify(b) === JSON.stringify(c);
       }),
       { numRuns: 500 },
     );

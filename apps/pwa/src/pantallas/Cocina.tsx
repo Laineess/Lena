@@ -16,9 +16,12 @@ import {
   mmss,
   tierPorMinutos,
 } from '../dominio/cocina';
-import { desbloquearAudio, reproducir } from '../dominio/sonido';
+import { desbloquearAudio, fijarVolumen, obtenerVolumen, reproducir } from '../dominio/sonido';
+import { marcarDisponibilidad } from '../dominio/api';
 import type { Catalogo, DatosSesion } from '../dominio/api';
 import type { Motor } from '../dominio/motor';
+
+const MAX_LINEAS_VISIBLES = 3; // (09 §6.0): 3 + "+N más"
 
 interface Props {
   sesion: DatosSesion;
@@ -62,10 +65,13 @@ export function Cocina({ sesion, catalogo, motor, enLinea, onSincronizar }: Prop
   const [reconocidas, setReconocidas] = useState<Set<string>>(new Set());
   const [ahora, setAhora] = useState(Date.now());
   const [menu, setMenu] = useState<string | null>(null);
+  const [volumen, setVolumen] = useState(obtenerVolumen());
+  const [ajustes, setAjustes] = useState(false);
 
-  // Estado anterior para decidir qué sonido va (nueva / regresa / cancela).
+  // Estado anterior para decidir qué sonido va (nueva / regresa / cancela / tic).
   const pendientesPrev = useRef<Map<string, number>>(new Map());
   const canceladasPrev = useRef<Set<string>>(new Set());
+  const tierPrev = useRef<Map<string, string>>(new Map());
   const arranque = useRef(true);
 
   async function recargar() {
@@ -74,12 +80,17 @@ export function Cocina({ sesion, catalogo, motor, enLinea, onSincronizar }: Prop
     const cancel = comandasCanceladas(log);
 
     // Sonidos, comparando contra el estado anterior (nunca en el primer render).
+    const ahoraMs = Date.now();
     if (!arranque.current) {
       for (const c of enCocina) {
         const antes = pendientesPrev.current.get(c.id);
         const ahoraPend = lineasPendientes(c).length;
         if (antes === undefined) reproducir('nueva');
         else if (ahoraPend > antes) reproducir('regresa'); // pidió más (09 §6.3)
+        // Tic UNA vez al cruzar a rojo (09 §6.5).
+        const ini = inicioEspera(c);
+        const tier = tierPorMinutos(ini ? (ahoraMs - ini) / 60_000 : 0, catalogo.umbrales);
+        if (tier === 'rojo' && tierPrev.current.get(c.id) !== 'rojo') reproducir('tic');
       }
       for (const x of cancel) {
         if (!canceladasPrev.current.has(x.comanda.id)) reproducir('cancela');
@@ -88,6 +99,12 @@ export function Cocina({ sesion, catalogo, motor, enLinea, onSincronizar }: Prop
     arranque.current = false;
     pendientesPrev.current = new Map(enCocina.map((c) => [c.id, lineasPendientes(c).length]));
     canceladasPrev.current = new Set(cancel.map((x) => x.comanda.id));
+    tierPrev.current = new Map(
+      enCocina.map((c) => {
+        const ini = inicioEspera(c);
+        return [c.id, tierPorMinutos(ini ? (ahoraMs - ini) / 60_000 : 0, catalogo.umbrales)];
+      }),
+    );
 
     setComandas(enCocina);
     setCanceladas(cancel);
@@ -127,6 +144,22 @@ export function Cocina({ sesion, catalogo, motor, enLinea, onSincronizar }: Prop
     await recargar();
   }
 
+  // RF-F-10: cocina marca un producto no disponible ("se acabó"). Va al servidor
+  // directo, no al log de eventos: el catálogo no es event-sourced.
+  async function noHay(productoId: string) {
+    try {
+      await marcarDisponibilidad(sesion.acceso, productoId, false);
+    } catch {
+      /* sin red: se reintenta manual; el catálogo se refresca al reconectar */
+    }
+    setMenu(null);
+  }
+
+  function cambiarVolumen(v: number) {
+    setVolumen(v);
+    fijarVolumen(v);
+  }
+
   const pendientesAlerta = canceladas.filter((x) => !reconocidas.has(x.comanda.id));
 
   return (
@@ -134,8 +167,45 @@ export function Cocina({ sesion, catalogo, motor, enLinea, onSincronizar }: Prop
       <header className="flex items-center justify-between px-4 py-2 text-sm">
         <span className="font-semibold uppercase tracking-wide">Cocina</span>
         <span className={enLinea ? 'text-ok' : 'text-error'}>{enLinea ? '● En línea' : '⚠ Sin red'}</span>
-        <span className="text-piedra-400">{comandas.length} comandas</span>
+        <div className="flex items-center gap-3">
+          <span className="text-piedra-400">{comandas.length} comandas</span>
+          <button
+            type="button"
+            onClick={() => setAjustes((v) => !v)}
+            aria-label="ajustes de sonido"
+            className="text-lg"
+          >
+            🔊
+          </button>
+        </div>
       </header>
+
+      {/* Ajustes de sonido (09 §6.5): volumen + prueba. Un sonido que no se oye
+          no existe, y una cocina en hora pico es más ruidosa que una oficina. */}
+      {ajustes && (
+        <div className="flex items-center gap-3 border-b border-piedra-800 bg-piedra-900 px-4 py-3">
+          <span>Volumen</span>
+          <input
+            type="range"
+            min={0}
+            max={1}
+            step={0.1}
+            value={volumen}
+            onChange={(e) => cambiarVolumen(Number(e.target.value))}
+            className="flex-1"
+          />
+          <button
+            type="button"
+            onClick={() => {
+              desbloquearAudio();
+              reproducir('nueva');
+            }}
+            className="tactil rounded-md bg-white/20 px-3 py-1"
+          >
+            Probar
+          </button>
+        </div>
+      )}
 
       {/* Alertas de cancelación (RF-F-11): se quedan hasta reconocer. */}
       {pendientesAlerta.length > 0 && (
@@ -169,11 +239,13 @@ export function Cocina({ sesion, catalogo, motor, enLinea, onSincronizar }: Prop
         {comandas.map((c) => {
           const inicio = inicioEspera(c);
           const ms = inicio ? ahora - inicio : 0;
-          const tier = tierPorMinutos(ms / 60_000);
+          const tier = tierPorMinutos(ms / 60_000, catalogo.umbrales);
           const col = COLOR_TIER[tier];
           const pend = lineasPendientes(c);
           const serv = lineasServidas(c);
-          const etiqueta = etiquetaDe(c);
+          const regreso = serv.length > 0; // ya sirvió algo y volvió (09 §6.3)
+          const visibles = pend.slice(0, MAX_LINEAS_VISIBLES);
+          const ocultas = pend.length - visibles.length;
           return (
             <div
               key={c.id}
@@ -184,16 +256,23 @@ export function Cocina({ sesion, catalogo, motor, enLinea, onSincronizar }: Prop
                 <span className="text-3xl font-bold tabular-nums">
                   {col.chip} {mmss(ms)}
                 </span>
-                <span className="text-lg font-semibold">{etiqueta}</span>
+                <span className="text-lg font-semibold">{etiquetaDe(c)}</span>
               </div>
 
               <ul className="flex-1 overflow-y-auto px-4 py-2">
-                {pend.map((l) => (
+                {/* Badge de comanda que regresó (09 §6.3). */}
+                {regreso && (
+                  <li className="mb-1 inline-block rounded bg-[#FACC15] px-2 py-0.5 text-sm font-bold text-black">
+                    ➕ AGREGADO
+                  </li>
+                )}
+                {visibles.map((l) => (
                   <li key={l.id} className="py-1 text-[28px] font-bold leading-tight">
                     {l.cantidad}× {l.nombreProducto}
                     {l.notas && <span className="block text-xl font-normal text-piedra-300">↳ {l.notas}</span>}
                   </li>
                 ))}
+                {ocultas > 0 && <li className="py-1 text-lg text-piedra-300">+{ocultas} más…</li>}
                 {serv.map((l) => (
                   <li key={l.id} className="py-1 text-lg text-piedra-400 line-through">
                     {l.cantidad}× {l.nombreProducto} · servido
@@ -211,20 +290,33 @@ export function Cocina({ sesion, catalogo, motor, enLinea, onSincronizar }: Prop
                   ✓
                 </button>
                 <div className="relative">
-                  <button type="button" onClick={() => setMenu(menu === c.id ? null : c.id)} aria-label="menú" className="tactil text-2xl">
+                  <button
+                    type="button"
+                    onClick={() => setMenu(menu === c.id ? null : c.id)}
+                    aria-label="menú"
+                    className="tactil text-2xl"
+                  >
                     ⋮
                   </button>
                   {menu === c.id && (
-                    <div className="absolute bottom-12 right-0 w-52 rounded-md bg-piedra-800 p-1 shadow-lg">
+                    <div className="absolute bottom-12 right-0 w-56 rounded-md bg-piedra-800 p-1 shadow-lg">
                       {pend.map((l) => (
-                        <button
-                          key={l.id}
-                          type="button"
-                          onClick={() => void cancelarLinea(c.id, l.id)}
-                          className="block w-full rounded px-3 py-2 text-left text-sm active:bg-piedra-700"
-                        >
-                          No puedo: {l.nombreProducto}
-                        </button>
+                        <div key={l.id} className="border-b border-piedra-700 last:border-0">
+                          <button
+                            type="button"
+                            onClick={() => void noHay(l.productoId)}
+                            className="block w-full rounded px-3 py-2 text-left text-sm active:bg-piedra-700"
+                          >
+                            No hay: {l.nombreProducto}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void cancelarLinea(c.id, l.id)}
+                            className="block w-full rounded px-3 py-2 text-left text-sm text-[#FCA5A5] active:bg-piedra-700"
+                          >
+                            No puedo prepararla: {l.nombreProducto}
+                          </button>
+                        </div>
                       ))}
                     </div>
                   )}

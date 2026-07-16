@@ -42,11 +42,19 @@ export function lineasServidas(c: Comanda): Linea[] {
 
 export type Tier = 'gris' | 'amarillo' | 'naranja' | 'rojo';
 
-// Umbrales en minutos (configurables por sucursal, RF-F-8; aquí el default).
-export function tierPorMinutos(min: number): Tier {
-  if (min >= 8) return 'rojo';
-  if (min >= 5) return 'naranja';
-  if (min >= 2) return 'amarillo';
+export interface Umbrales {
+  amarillo: number;
+  naranja: number;
+  rojo: number;
+}
+
+export const UMBRALES_DEFAULT: Umbrales = { amarillo: 2, naranja: 5, rojo: 8 };
+
+// Umbrales en minutos, configurables por sucursal (RF-F-8).
+export function tierPorMinutos(min: number, u: Umbrales = UMBRALES_DEFAULT): Tier {
+  if (min >= u.rojo) return 'rojo';
+  if (min >= u.naranja) return 'naranja';
+  if (min >= u.amarillo) return 'amarillo';
   return 'gris';
 }
 
@@ -77,7 +85,9 @@ export function hlcMaximo(log: readonly Evento[], comandaId?: string): string | 
 
 // Comandas canceladas con el momento (ms) de su cancelación, para mostrarlas
 // como alerta hasta que el cocinero las reconozca.
-export function comandasCanceladas(log: readonly Evento[]): { comanda: Comanda; canceladaEn: number; motivo: string }[] {
+export function comandasCanceladas(
+  log: readonly Evento[],
+): { comanda: Comanda; canceladaEn: number; motivo: string }[] {
   const ids = new Set(log.map((e) => e.comandaId));
   const out: { comanda: Comanda; canceladaEn: number; motivo: string }[] = [];
   for (const id of ids) {

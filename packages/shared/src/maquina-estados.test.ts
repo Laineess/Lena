@@ -12,13 +12,7 @@ import type { EstadoLinea, Rol, TipoEvento } from './tipos';
 import { formatearMoneda } from './tipos';
 
 const ROLES: readonly Rol[] = ['administrador', 'cocina', 'mesero'];
-const ESTADOS: readonly EstadoLinea[] = [
-  'borrador',
-  'pendiente',
-  'en_preparacion',
-  'lista',
-  'cancelada',
-];
+const ESTADOS: readonly EstadoLinea[] = ['borrador', 'pendiente', 'en_preparacion', 'lista', 'cancelada'];
 
 // ── RS-Y-1: autorización de eventos ──────────────────────────
 
@@ -159,16 +153,12 @@ describe('transiciones de línea', () => {
 describe('generaMerma — propiedades', () => {
   it('cocina NUNCA genera merma, en ningún estado', () => {
     // Su cancelación significa "no pude prepararlo": esa comida nunca existió.
-    fc.assert(
-      fc.property(fc.constantFrom(...ESTADOS), (estado) => generaMerma(estado, 'cocina') === false),
-    );
+    fc.assert(fc.property(fc.constantFrom(...ESTADOS), (estado) => generaMerma(estado, 'cocina') === false));
   });
 
   it('borrador NUNCA genera merma, para ningún rol', () => {
     // La línea no existió para nadie: cocina ni la vio.
-    fc.assert(
-      fc.property(fc.constantFrom(...ROLES), (rol) => generaMerma('borrador', rol) === false),
-    );
+    fc.assert(fc.property(fc.constantFrom(...ROLES), (rol) => generaMerma('borrador', rol) === false));
   });
 
   it('mesero y admin SIEMPRE mermán lo que ya está en cocina', () => {

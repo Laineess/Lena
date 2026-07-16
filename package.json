@@ -18,12 +18,25 @@
     "db:down": "docker compose down",
     "db:reset": "docker compose down -v && docker compose up -d postgres",
     "typecheck": "pnpm -r typecheck",
-    "lint": "pnpm -r lint",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "test": "pnpm -r test",
-    "check": "pnpm typecheck && pnpm lint && pnpm test"
+    "check": "pnpm typecheck && pnpm lint && pnpm test",
+    "deploy": "bash scripts/deploy.sh"
+  },
+  "dependencies": {
+    "tsx": "^4.19.2"
   },
   "devDependencies": {
+    "@eslint/js": "^9",
     "@types/node": "^22.10.2",
-    "typescript": "^5.7.2"
+    "eslint": "^9",
+    "eslint-config-prettier": "^10",
+    "eslint-plugin-react-hooks": "^7",
+    "globals": "^17",
+    "prettier": "^3",
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8"
   }
 }

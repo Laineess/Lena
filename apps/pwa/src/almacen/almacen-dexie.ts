@@ -53,7 +53,10 @@ export class AlmacenDexie implements Almacen {
   }
 
   async sacarDeCola(ids: readonly string[]): Promise<void> {
-    await this.db.eventos.where('id').anyOf(ids as string[]).modify({ enCola: 0 });
+    await this.db.eventos
+      .where('id')
+      .anyOf(ids as string[])
+      .modify({ enCola: 0 });
   }
 
   async registrarRemotos(eventos: readonly EventoCable[]): Promise<void> {

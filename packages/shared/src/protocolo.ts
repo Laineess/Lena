@@ -160,12 +160,9 @@ export interface RespuestaPull {
 // abriría un segundo camino de entrega sin cursor: un mensaje perdido en una
 // reconexión sería un evento perdido.
 export type MensajeServidor =
-  | { readonly tipo: 'hay_novedades'; readonly sucursalId: string; readonly seq: number }
-  | { readonly tipo: 'pong' };
+  { readonly tipo: 'hay_novedades'; readonly sucursalId: string; readonly seq: number } | { readonly tipo: 'pong' };
 
-export type MensajeCliente =
-  | { readonly tipo: 'suscribir'; readonly sucursalId: string }
-  | { readonly tipo: 'ping' };
+export type MensajeCliente = { readonly tipo: 'suscribir'; readonly sucursalId: string } | { readonly tipo: 'ping' };
 
 // Cable → dominio. Descarta tsCliente: el dominio no debe poder ordenar por él.
 export function aEventoDominio(cable: EventoCable): Evento {

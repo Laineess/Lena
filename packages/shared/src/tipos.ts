@@ -14,21 +14,9 @@ export type Rol = 'administrador' | 'cocina' | 'mesero';
  * cocina tiene un solo botón (✓ lista). Se contempla en la lógica para que
  * habilitarlo después sea un cambio de UI, no de dominio.
  */
-export type EstadoLinea =
-  | 'borrador'
-  | 'pendiente'
-  | 'en_preparacion'
-  | 'lista'
-  | 'cancelada';
+export type EstadoLinea = 'borrador' | 'pendiente' | 'en_preparacion' | 'lista' | 'cancelada';
 
-export type EstadoComanda =
-  | 'borrador'
-  | 'enviada'
-  | 'en_preparacion'
-  | 'lista'
-  | 'entregada'
-  | 'cobrada'
-  | 'cancelada';
+export type EstadoComanda = 'borrador' | 'enviada' | 'en_preparacion' | 'lista' | 'entregada' | 'cobrada' | 'cancelada';
 
 export type TipoServicio = 'mesa' | 'para_llevar' | 'domicilio';
 
@@ -85,9 +73,7 @@ export interface EventoBase {
 // manda tipo:'linea_lista' con payload:'comanda_cobrada' y cobra (T1). El
 // `tipo` aparte existe solo porque la base lo indexa. En el cable lo valida
 // EsquemaEvento (protocolo.ts).
-type EventoDe<P> = P extends PayloadEvento
-  ? EventoBase & { readonly tipo: P['tipo']; readonly payload: P }
-  : never;
+type EventoDe<P> = P extends PayloadEvento ? EventoBase & { readonly tipo: P['tipo']; readonly payload: P } : never;
 
 export type Evento = EventoDe<PayloadEvento>;
 
@@ -122,7 +108,12 @@ export type PayloadEvento =
   | { readonly tipo: 'linea_lista' }
   | { readonly tipo: 'comanda_lista' }
   | { readonly tipo: 'comanda_entregada' }
-  | { readonly tipo: 'pago_registrado'; readonly metodo: MetodoPago; readonly monto: Centavos; readonly recibido?: Centavos }
+  | {
+      readonly tipo: 'pago_registrado';
+      readonly metodo: MetodoPago;
+      readonly monto: Centavos;
+      readonly recibido?: Centavos;
+    }
   | { readonly tipo: 'comanda_cobrada' }
   | { readonly tipo: 'comanda_cancelada'; readonly motivo: string }
   | { readonly tipo: 'linea_cancelada'; readonly motivo: string }

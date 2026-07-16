@@ -42,7 +42,13 @@ describe('GET /comandas', () => {
         d.ev(cid, { tipo: 'comanda_creada', tipoServicio: 'para_llevar' }, { id: uuid() }),
         d.ev(
           cid,
-          { tipo: 'linea_agregada', productoId: ID.pastor, nombreProducto: 'Pastor', precioUnitario: 1800, cantidad: 2 },
+          {
+            tipo: 'linea_agregada',
+            productoId: ID.pastor,
+            nombreProducto: 'Pastor',
+            precioUnitario: 1800,
+            cantidad: 2,
+          },
           { id: uuid(), detalleId: uuid() },
         ),
         d.ev(cid, { tipo: 'comanda_enviada' }, { id: uuid() }),

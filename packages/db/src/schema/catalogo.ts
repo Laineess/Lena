@@ -1,15 +1,5 @@
 import { sql } from 'drizzle-orm';
-import {
-  boolean,
-  check,
-  integer,
-  numeric,
-  pgTable,
-  primaryKey,
-  text,
-  timestamp,
-  uuid,
-} from 'drizzle-orm/pg-core';
+import { boolean, check, integer, numeric, pgTable, primaryKey, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 import { sucursal, usuario } from './organizacion';
 
 export const categoria = pgTable('categoria', {
@@ -81,8 +71,5 @@ export const productoPrecioSucursal = pgTable(
     precio: numeric('precio', { precision: 10, scale: 2 }).notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [
-    primaryKey({ columns: [t.productoId, t.sucursalId] }),
-    check('precio_no_negativo', sql`${t.precio} >= 0`),
-  ],
+  (t) => [primaryKey({ columns: [t.productoId, t.sucursalId] }), check('precio_no_negativo', sql`${t.precio} >= 0`)],
 );

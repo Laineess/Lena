@@ -72,7 +72,15 @@ export function App() {
 
   // La cocina tiene su propia vista (09 §6): tarjetas, no captura.
   if (sesion.sesion.rol === 'cocina') {
-    return <Cocina sesion={sesion} catalogo={catalogo} motor={motor} enLinea={enLineaReal} onSincronizar={() => void sincronizar()} />;
+    return (
+      <Cocina
+        sesion={sesion}
+        catalogo={catalogo}
+        motor={motor}
+        enLinea={enLineaReal}
+        onSincronizar={() => void sincronizar()}
+      />
+    );
   }
 
   if (vista.v === 'comandas') {
@@ -96,7 +104,10 @@ export function App() {
       onSincronizar={() => void sincronizar()}
       onVerComandas={() => setVista({ v: 'comandas' })}
       {...(vista.v === 'adicion'
-        ? { adicion: { comandaId: vista.comandaId, etiqueta: vista.etiqueta }, onListo: () => setVista({ v: 'comandas' }) }
+        ? {
+            adicion: { comandaId: vista.comandaId, etiqueta: vista.etiqueta },
+            onListo: () => setVista({ v: 'comandas' }),
+          }
         : {})}
     />
   );

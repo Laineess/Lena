@@ -12,15 +12,7 @@
  */
 import { compararHlc } from './hlc';
 import { generaMerma, transicionLineaValida } from './maquina-estados';
-import type {
-  Comanda,
-  EstadoComanda,
-  EstadoLinea,
-  Evento,
-  Linea,
-  Pago,
-  ResumenMerma,
-} from './tipos';
+import type { Comanda, EstadoComanda, EstadoLinea, Evento, Linea, Pago, ResumenMerma } from './tipos';
 
 /** Ordena por HLC. NO por `ts_cliente`: los relojes de tablet mienten. */
 export function ordenarEventos(eventos: readonly Evento[]): Evento[] {
@@ -299,9 +291,7 @@ function estadoDerivado(acc: Acumulador, lineas: readonly Linea[]): EstadoComand
  * el ticket de ayer sigue diciendo $18 (RNF-I-1).
  */
 export function calcularTotal(lineas: readonly Linea[]): number {
-  return lineas
-    .filter((l) => l.estado !== 'cancelada')
-    .reduce((suma, l) => suma + l.cantidad * l.precioUnitario, 0);
+  return lineas.filter((l) => l.estado !== 'cancelada').reduce((suma, l) => suma + l.cantidad * l.precioUnitario, 0);
 }
 
 export function totalPagado(pagos: readonly Pago[]): number {

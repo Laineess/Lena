@@ -24,13 +24,14 @@ describe('GET /catalogo', () => {
     expect(r.statusCode).toBe(401);
   });
 
-  it('devuelve categorías, productos con precio en centavos y mesas', async () => {
+  it('devuelve categorías, productos con precio en centavos, mesas y umbrales', async () => {
     const r = await srv.app.inject({ method: 'GET', url: '/catalogo', headers: auth });
     expect(r.statusCode).toBe(200);
     const cat = r.json() as {
       categorias: unknown[];
       productos: { precio: number; disponible: boolean }[];
       mesas: unknown[];
+      umbrales: { amarillo: number; naranja: number; rojo: number };
     };
     expect(cat.categorias.length).toBeGreaterThan(0);
     expect(cat.productos.length).toBeGreaterThan(0);
@@ -38,6 +39,49 @@ describe('GET /catalogo', () => {
     // Precio en centavos (entero), no en pesos (RNF-I-8).
     const pastor = cat.productos.find((p) => Number.isInteger(p.precio) && p.precio >= 1000);
     expect(pastor).toBeDefined();
+    // Umbrales del cronómetro de cocina (RF-F-8).
+    expect(cat.umbrales).toEqual({ amarillo: 2, naranja: 5, rojo: 8 });
+  });
+});
+
+describe('PATCH /productos/:id/disponibilidad (RF-F-10)', () => {
+  it('la cocina puede marcar un producto no disponible; el mesero no', async () => {
+    const { productos } = (await srv.app
+      .inject({ method: 'GET', url: '/catalogo', headers: auth })
+      .then((r) => r.json())) as {
+      productos: { id: string }[];
+    };
+    const prod = productos[0]!.id;
+
+    // El mesero (auth) NO puede: 403.
+    const negado = await srv.app.inject({
+      method: 'PATCH',
+      url: `/productos/${prod}/disponibilidad`,
+      headers: auth,
+      payload: { disponible: false },
+    });
+    expect(negado.statusCode).toBe(403);
+
+    // La cocina SÍ puede.
+    const cocina = {
+      authorization: `Bearer ${await tokenAcceso({ ...sesionMesero(), rol: 'cocina', usuarioId: '01930000-0000-7000-8000-000000000013' })}`,
+    };
+    const ok = await srv.app.inject({
+      method: 'PATCH',
+      url: `/productos/${prod}/disponibilidad`,
+      headers: cocina,
+      payload: { disponible: false },
+    });
+    expect(ok.statusCode).toBe(200);
+    expect((ok.json() as { disponible: boolean }).disponible).toBe(false);
+
+    // Restaurar para no ensuciar otros tests.
+    await srv.app.inject({
+      method: 'PATCH',
+      url: `/productos/${prod}/disponibilidad`,
+      headers: cocina,
+      payload: { disponible: true },
+    });
   });
 });
 

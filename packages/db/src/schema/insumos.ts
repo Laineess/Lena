@@ -58,9 +58,7 @@ export const insumoParametro = pgTable(
     sucursalId: uuid('sucursal_id')
       .notNull()
       .references(() => sucursal.id),
-    stockSeguridad: numeric('stock_seguridad', { precision: 12, scale: 3 })
-      .notNull()
-      .default('0'),
+    stockSeguridad: numeric('stock_seguridad', { precision: 12, scale: 3 }).notNull().default('0'),
     diasEntrega: integer('dias_entrega').notNull().default(1),
   },
   (t) => [primaryKey({ columns: [t.insumoId, t.sucursalId] })],

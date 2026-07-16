@@ -1,0 +1,17 @@
+# API de sincronización (@lena/api). Corre como usuario NO-root (RS-T-13).
+# Se instala dentro de la imagen (el .dockerignore excluye node_modules): con
+# pnpm + workspace es más robusto que copiar node_modules entre stages.
+FROM node:22-alpine
+RUN npm install -g pnpm@9.15.0
+WORKDIR /app
+
+COPY . .
+# --prod: la imagen NO lleva dev-deps (vitest, drizzle-kit…), solo lo que corre
+# en producción. tsx es dependencia de raíz porque el servidor se ejecuta con él.
+RUN pnpm install --frozen-lockfile --prod
+
+ENV NODE_ENV=production
+USER node
+EXPOSE 3000
+# `start` = tsx src/servidor.ts; pnpm resuelve tsx y las deps del workspace.
+CMD ["pnpm", "--filter", "@lena/api", "start"]

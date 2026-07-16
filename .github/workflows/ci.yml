@@ -1,0 +1,80 @@
+# CI (0.6, RS-T-11). Corre en cada push y PR: typecheck estricto, lint, formato,
+# toda la suite (con un Postgres real para las pruebas de integración) y
+# npm audit. Cero vulnerabilidades críticas para poder desplegar.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  verificar:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: lena
+          POSTGRES_PASSWORD: cambiame_en_local
+          POSTGRES_DB: lena
+          TZ: America/Mexico_City
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U lena -d lena"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Preparar .env de pruebas
+        run: |
+          cat > .env <<EOF
+          POSTGRES_USER=lena
+          POSTGRES_PASSWORD=cambiame_en_local
+          POSTGRES_DB=lena
+          POSTGRES_PORT=5432
+          DATABASE_URL=postgresql://lena:cambiame_en_local@localhost:5432/lena
+          DATABASE_URL_APP=postgresql://lena_app:cambiame_en_el_despliegue@localhost:5432/lena
+          NODE_ENV=development
+          JWT_SECRET=$(openssl rand -base64 48)
+          TZ=America/Mexico_City
+          EOF
+
+      - name: Migraciones + seed
+        run: |
+          pnpm db:migrate
+          pnpm db:seed
+          pnpm --filter @lena/api seed:auth
+
+      - name: Typecheck estricto (RNF-M-3)
+        run: pnpm typecheck
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Formato (Prettier)
+        run: pnpm format:check
+
+      - name: Pruebas (todas, contra Postgres real)
+        run: pnpm test
+
+      - name: Auditoría de dependencias de producción (RS-T-11)
+        # Solo el árbol de producción: lo que se despliega. Las herramientas de
+        # desarrollo (vitest, etc.) no viajan a la imagen (Dockerfile usa --prod).
+        run: pnpm audit --prod --audit-level high

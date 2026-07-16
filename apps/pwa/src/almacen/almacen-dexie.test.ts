@@ -104,7 +104,17 @@ describe('AlmacenDexie', () => {
     const det = randomUUID();
     await almacen.encolar(ev(cid, { tipo: 'comanda_creada', tipoServicio: 'para_llevar' }));
     await almacen.encolar(
-      ev(cid, { tipo: 'linea_agregada', productoId: randomUUID(), nombreProducto: 'Pastor', precioUnitario: 1800, cantidad: 3 }, det),
+      ev(
+        cid,
+        {
+          tipo: 'linea_agregada',
+          productoId: randomUUID(),
+          nombreProducto: 'Pastor',
+          precioUnitario: 1800,
+          cantidad: 3,
+        },
+        det,
+      ),
     );
     const c = plegarComanda(cid, await almacen.log());
     expect(c?.total).toBe(5400);

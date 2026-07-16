@@ -28,7 +28,17 @@ interface Props {
   onListo?: () => void;
 }
 
-export function Captura({ sesion, catalogo, motor, enLinea, pendientes, onSincronizar, onVerComandas, adicion, onListo }: Props) {
+export function Captura({
+  sesion,
+  catalogo,
+  motor,
+  enLinea,
+  pendientes,
+  onSincronizar,
+  onVerComandas,
+  adicion,
+  onListo,
+}: Props) {
   const disp = configDispositivo();
   const constructor = useMemo(
     () =>
@@ -161,13 +171,21 @@ export function Captura({ sesion, catalogo, motor, enLinea, pendientes, onSincro
           </button>
         ) : (
           <div className="flex items-center gap-2">
-            <select value={tipo} onChange={(e) => elegirTipo(e.target.value as TipoServicio)} className="rounded-md bg-piedra-100 px-2 py-1 font-semibold">
+            <select
+              value={tipo}
+              onChange={(e) => elegirTipo(e.target.value as TipoServicio)}
+              className="rounded-md bg-piedra-100 px-2 py-1 font-semibold"
+            >
               <option value="para_llevar">Para llevar</option>
               <option value="mesa">Mesa</option>
               <option value="domicilio">Domicilio</option>
             </select>
             {tipo === 'mesa' && (
-              <select value={mesaId ?? ''} onChange={(e) => setMesaId(e.target.value || null)} className="rounded-md bg-piedra-100 px-2 py-1">
+              <select
+                value={mesaId ?? ''}
+                onChange={(e) => setMesaId(e.target.value || null)}
+                className="rounded-md bg-piedra-100 px-2 py-1"
+              >
                 <option value="">Mesa…</option>
                 {catalogo.mesas.map((m) => (
                   <option key={m.id} value={m.id}>

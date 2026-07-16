@@ -1,15 +1,5 @@
 import { sql } from 'drizzle-orm';
-import {
-  check,
-  date,
-  index,
-  numeric,
-  pgTable,
-  text,
-  timestamp,
-  uniqueIndex,
-  uuid,
-} from 'drizzle-orm/pg-core';
+import { check, date, index, numeric, pgTable, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
 import { categoriaGasto, estadoCorte } from './enums';
 import { sucursal, usuario } from './organizacion';
 
@@ -78,8 +68,5 @@ export const gasto = pgTable(
       .references(() => usuario.id),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [
-    index('gasto_periodo_idx').on(t.sucursalId, t.fecha),
-    check('gasto_positivo', sql`${t.monto} > 0`),
-  ],
+  (t) => [index('gasto_periodo_idx').on(t.sucursalId, t.fecha), check('gasto_positivo', sql`${t.monto} > 0`)],
 );

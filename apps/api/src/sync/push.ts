@@ -4,14 +4,7 @@
 // proyecciones que se RECONSTRUYEN plegando el log con @lena/shared: la misma
 // función pura que corre en el cliente (RNF-M-7). No hay dos verdades.
 import { and, eq, sql } from 'drizzle-orm';
-import {
-  DERIVA_MAXIMA_MS,
-  aEventoDominio,
-  aPesos,
-  eventoPermitido,
-  parsearHlc,
-  plegarComanda,
-} from '@lena/shared';
+import { DERIVA_MAXIMA_MS, aEventoDominio, aPesos, eventoPermitido, parsearHlc, plegarComanda } from '@lena/shared';
 import type { EventoCable, EventoRechazado, PeticionPush, RespuestaPush } from '@lena/shared';
 import { comanda, comandaDetalle, comandaDomicilio, comandaEvento, corteCaja } from '@lena/db';
 import type { Db } from '../db';
@@ -73,9 +66,7 @@ export async function procesarPush(
 
   await db.transaction(async (tx) => {
     for (const [cid, nuevos] of porComanda) {
-      const existentes = (
-        await tx.select().from(comandaEvento).where(eq(comandaEvento.comandaId, cid))
-      ).map(aDominio);
+      const existentes = (await tx.select().from(comandaEvento).where(eq(comandaEvento.comandaId, cid))).map(aDominio);
       const existentesPorId = new Map(existentes.map((e) => [e.id, e]));
 
       // Idempotencia: id repetido con mismo contenido = éxito; con otro

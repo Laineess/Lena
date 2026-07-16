@@ -15,14 +15,7 @@ import {
 } from 'drizzle-orm/pg-core';
 import { corteCaja } from './caja';
 import { producto } from './catalogo';
-import {
-  estadoComanda,
-  estadoLinea,
-  metodoPago,
-  rolUsuario,
-  tipoEvento,
-  tipoServicio,
-} from './enums';
+import { estadoComanda, estadoLinea, metodoPago, rolUsuario, tipoEvento, tipoServicio } from './enums';
 import { dispositivo, mesa, sucursal, usuario } from './organizacion';
 
 /**
@@ -87,10 +80,7 @@ export const comanda = pgTable(
       sql`(${t.tipoServicio} = 'mesa' AND ${t.mesaId} IS NOT NULL)
        OR (${t.tipoServicio} <> 'mesa' AND ${t.mesaId} IS NULL)`,
     ),
-    check(
-      'cancelada_con_motivo',
-      sql`${t.estado} <> 'cancelada' OR ${t.motivoCancelacion} IS NOT NULL`,
-    ),
+    check('cancelada_con_motivo', sql`${t.estado} <> 'cancelada' OR ${t.motivoCancelacion} IS NOT NULL`),
   ],
 );
 
@@ -350,9 +340,6 @@ export const mermaProducto = pgTable(
     index('merma_producto_prod_idx').on(t.productoId, t.fecha),
     check('cantidad_positiva', sql`${t.cantidad} > 0`),
     // La base rechaza el registro de una merma que no pudo existir.
-    check(
-      'solo_si_ya_estaba_en_cocina',
-      sql`${t.estadoAlCancelar} IN ('pendiente', 'en_preparacion', 'lista')`,
-    ),
+    check('solo_si_ya_estaba_en_cocina', sql`${t.estadoAlCancelar} IN ('pendiente', 'en_preparacion', 'lista')`),
   ],
 );

@@ -32,9 +32,7 @@ export class ErrorDerivaReloj extends Error {
 }
 
 export function formatearHlc({ fisico, logico, nodo }: HlcPartes): Hlc {
-  return `${fisico.toString(16).padStart(16, '0')}-${logico
-    .toString(16)
-    .padStart(4, '0')}-${nodo}`;
+  return `${fisico.toString(16).padStart(16, '0')}-${logico.toString(16).padStart(4, '0')}-${nodo}`;
 }
 
 export function parsearHlc(hlc: Hlc): HlcPartes {

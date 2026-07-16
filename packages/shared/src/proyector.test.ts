@@ -1,12 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { RelojHlc } from './hlc';
 import { generaMerma } from './maquina-estados';
-import {
-  calcularMermaSiSeCancela,
-  estadoLineaDe,
-  pagosCuadran,
-  plegarComanda,
-} from './proyector';
+import { calcularMermaSiSeCancela, estadoLineaDe, pagosCuadran, plegarComanda } from './proyector';
 import type { Evento, PayloadEvento, Rol } from './tipos';
 import { aCentavos, aPesos, formatearMoneda } from './tipos';
 
@@ -16,10 +11,13 @@ const COMANDA = 'c-1';
 const SUCURSAL = 's-1';
 
 function constructor(nodo = 'A') {
-  const reloj = new RelojHlc(nodo, (() => {
-    let t = 1_700_000_000_000;
-    return () => (t += 1);
-  })());
+  const reloj = new RelojHlc(
+    nodo,
+    (() => {
+      let t = 1_700_000_000_000;
+      return () => (t += 1);
+    })(),
+  );
   let n = 0;
 
   // Genérico sobre el payload a propósito: así `tipo` se DERIVA de
@@ -181,10 +179,12 @@ describe('ADR-006 / RNF-I-1 — el precio es un hecho del pasado', () => {
 
     // Aunque el catálogo cambie a $20 después, este total NO se mueve: el
     // precio vive copiado en el evento, no se consulta a nadie.
-    expect(plegarComanda(COMANDA, [
-      ev({ tipo: 'comanda_creada', tipoServicio: 'para_llevar' }),
-      ev({ ...PASTOR, precioUnitario: 1800, cantidad: 3 }, { detalleId: 'l-1' }),
-    ])!.total).toBe(5400);
+    expect(
+      plegarComanda(COMANDA, [
+        ev({ tipo: 'comanda_creada', tipoServicio: 'para_llevar' }),
+        ev({ ...PASTOR, precioUnitario: 1800, cantidad: 3 }, { detalleId: 'l-1' }),
+      ])!.total,
+    ).toBe(5400);
   });
 
   it('las líneas canceladas no suman al total', () => {
@@ -483,9 +483,7 @@ describe('estadoLineaDe', () => {
 
   it('devuelve null si la línea no existe', () => {
     const ev = constructor();
-    const c = plegarComanda(COMANDA, [
-      ev({ tipo: 'comanda_creada', tipoServicio: 'para_llevar' }),
-    ])!;
+    const c = plegarComanda(COMANDA, [ev({ tipo: 'comanda_creada', tipoServicio: 'para_llevar' })])!;
     expect(estadoLineaDe(c, 'no-existe')).toBeNull();
   });
 });
@@ -503,10 +501,7 @@ describe('eventos sin detalleId no rompen nada', () => {
   it('eventos de otra comanda se ignoran', () => {
     const ev = constructor();
     const ajeno: Evento = { ...ev(PASTOR, { detalleId: 'x' }), comandaId: 'otra' };
-    const c = plegarComanda(COMANDA, [
-      ev({ tipo: 'comanda_creada', tipoServicio: 'para_llevar' }),
-      ajeno,
-    ])!;
+    const c = plegarComanda(COMANDA, [ev({ tipo: 'comanda_creada', tipoServicio: 'para_llevar' }), ajeno])!;
     expect(c.lineas).toHaveLength(0);
   });
 

@@ -67,7 +67,11 @@ describe('rutas HTTP', () => {
 
   it('sin token, el sync devuelve 401 (RS-Z-4)', async () => {
     const { eventos } = comandaNueva();
-    const push = await srv.app.inject({ method: 'POST', url: '/sync/push', payload: { dispositivoId: ID.tabletA, eventos } });
+    const push = await srv.app.inject({
+      method: 'POST',
+      url: '/sync/push',
+      payload: { dispositivoId: ID.tabletA, eventos },
+    });
     expect(push.statusCode).toBe(401);
     const pull = await srv.app.inject({ method: 'GET', url: `/sync/pull?sucursalId=${ID.sucursal}` });
     expect(pull.statusCode).toBe(401);
@@ -110,7 +114,12 @@ describe('WebSocket + LISTEN/NOTIFY', () => {
     await new Promise((r) => setTimeout(r, 50));
 
     const { eventos } = comandaNueva();
-    await srv.app.inject({ method: 'POST', url: '/sync/push', headers: auth, payload: { dispositivoId: ID.tabletA, eventos } });
+    await srv.app.inject({
+      method: 'POST',
+      url: '/sync/push',
+      headers: auth,
+      payload: { dispositivoId: ID.tabletA, eventos },
+    });
 
     const msg = await Promise.race([
       aviso,

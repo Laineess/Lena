@@ -84,7 +84,15 @@ export function Ingreso({ onIngreso }: { onIngreso: (s: DatosSesion) => void }) 
 
   return (
     <div className="flex h-full flex-col items-center justify-center gap-6 p-6">
-      <button type="button" onClick={() => { setSel(null); setPin(''); setError(null); }} className="self-start text-piedra-500">
+      <button
+        type="button"
+        onClick={() => {
+          setSel(null);
+          setPin('');
+          setError(null);
+        }}
+        className="self-start text-piedra-500"
+      >
         ‹ Volver
       </button>
       <h2 className="text-h2 font-semibold">{sel.nombre}</h2>
@@ -107,10 +115,18 @@ export function Ingreso({ onIngreso }: { onIngreso: (s: DatosSesion) => void }) 
             {d}
           </button>
         ))}
-        <button type="button" onClick={() => setPin(pin.slice(0, -1))} className="tactil h-16 w-20 rounded-md text-2xl active:bg-piedra-100">
+        <button
+          type="button"
+          onClick={() => setPin(pin.slice(0, -1))}
+          className="tactil h-16 w-20 rounded-md text-2xl active:bg-piedra-100"
+        >
           ←
         </button>
-        <button type="button" onClick={() => toca('0')} className="tactil h-16 w-20 rounded-md bg-piedra-100 text-2xl font-semibold active:bg-piedra-200">
+        <button
+          type="button"
+          onClick={() => toca('0')}
+          className="tactil h-16 w-20 rounded-md bg-piedra-100 text-2xl font-semibold active:bg-piedra-200"
+        >
           0
         </button>
         <span className="flex h-16 w-20 items-center justify-center text-piedra-300">{ocupado ? '…' : ''}</span>

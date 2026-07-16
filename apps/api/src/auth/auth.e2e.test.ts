@@ -166,7 +166,10 @@ describe('aislamiento de sucursal', () => {
     // Evento con una sucursal ajena a la de la sesión.
     const otraSucursal = uuid();
     const d = dispositivo('A', { dispositivoId: ID.tabletA });
-    const evento = { ...d.ev(uuid(), { tipo: 'comanda_creada', tipoServicio: 'para_llevar' }, { id: uuid() }), sucursalId: otraSucursal };
+    const evento = {
+      ...d.ev(uuid(), { tipo: 'comanda_creada', tipoServicio: 'para_llevar' }, { id: uuid() }),
+      sucursalId: otraSucursal,
+    };
 
     const r = await srv.app.inject({
       method: 'POST',

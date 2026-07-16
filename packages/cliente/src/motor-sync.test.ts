@@ -83,7 +83,13 @@ describe('MotorSync', () => {
     await motor.crear(
       nuevoEvento(
         cid,
-        { tipo: 'linea_agregada', productoId: randomUUID(), nombreProducto: 'Pastor', precioUnitario: 1800, cantidad: 2 },
+        {
+          tipo: 'linea_agregada',
+          productoId: randomUUID(),
+          nombreProducto: 'Pastor',
+          precioUnitario: 1800,
+          cantidad: 2,
+        },
         reloj,
         randomUUID(),
       ),

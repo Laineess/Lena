@@ -1,0 +1,29 @@
+# Caddy: TLS automático (RS-T-1), sirve la PWA y hace de reverse-proxy al API.
+# En un mismo dominio no hace falta CORS (RS-T-4).
+#
+# Cambia lena.ejemplo.mx por el dominio real antes de desplegar.
+lena.ejemplo.mx {
+	encode gzip
+
+	# HSTS y cabeceras de seguridad (RS-T-2, RS-T-3).
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+
+	# El API: todo lo que sea sync, auth, catálogo, comandas y productos.
+	@api path /auth/* /sync/* /catalogo* /comandas* /productos/*
+	handle @api {
+		reverse_proxy api:3000
+	}
+
+	# Todo lo demás: la PWA (SPA con fallback a index.html).
+	handle {
+		root * /srv/pwa
+		try_files {path} /index.html
+		file_server
+	}
+}

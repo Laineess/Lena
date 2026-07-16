@@ -213,7 +213,13 @@ describe('convergencia (property-based)', () => {
                 const e1 = disp.ev(cid, { tipo: 'comanda_creada', tipoServicio: 'para_llevar' }, { id: uuid() });
                 const e2 = disp.ev(
                   cid,
-                  { tipo: 'linea_agregada', productoId: ID.pastor, nombreProducto: 'Pastor', precioUnitario: 1800, cantidad: 2 },
+                  {
+                    tipo: 'linea_agregada',
+                    productoId: ID.pastor,
+                    nombreProducto: 'Pastor',
+                    precioUnitario: 1800,
+                    cantidad: 2,
+                  },
                   { id: uuid(), detalleId: uuid() },
                 );
                 generados.add(e1.id).add(e2.id);

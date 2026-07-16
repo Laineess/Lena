@@ -21,10 +21,17 @@ export interface Mesa {
   nombre: string;
 }
 
+export interface Umbrales {
+  amarillo: number;
+  naranja: number;
+  rojo: number;
+}
+
 export interface Catalogo {
   categorias: { id: string; nombre: string; orden: number }[];
   productos: ProductoCat[];
   mesas: Mesa[];
+  umbrales: Umbrales;
 }
 
 export interface DatosSesion {
@@ -86,4 +93,14 @@ export async function obtenerHistorial(token: string): Promise<ComandaHistorial[
   const res = await fetch('/comandas', { headers: { authorization: `Bearer ${token}` } });
   if (!res.ok) throw new ErrorApi(res.status, {});
   return res.json() as Promise<ComandaHistorial[]>;
+}
+
+// RF-F-10: cocina marca un producto no disponible ("se acabó").
+export async function marcarDisponibilidad(token: string, productoId: string, disponible: boolean): Promise<void> {
+  const res = await fetch(`/productos/${productoId}/disponibilidad`, {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+    body: JSON.stringify({ disponible }),
+  });
+  if (!res.ok) throw new ErrorApi(res.status, {});
 }

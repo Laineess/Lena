@@ -56,3 +56,52 @@ services:
       options:
         max-size: 10m
         max-file: 3
+
+  # API de sincronización. Corre como usuario no-root (RS-T-13, ver Dockerfile).
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      API_PORT: 3000
+      # El API usa lena_app, nunca el dueño (RS-U-1). Se lee de .env.
+      DATABASE_URL_APP: ${DATABASE_URL_APP}
+      JWT_SECRET: ${JWT_SECRET}
+      TZ: America/Mexico_City
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # Solo accesible por la red interna de Docker; lo expone Caddy, no el host.
+    expose:
+      - '3000'
+    mem_limit: 256m
+    mem_reservation: 128m
+    cpus: 0.5
+    logging:
+      driver: json-file
+      options: { max-size: 10m, max-file: 3 }
+
+  # Caddy: TLS automático, sirve la PWA y hace de proxy al API (RS-T-1..T-4).
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    restart: unless-stopped
+    ports:
+      - '80:80'
+      - '443:443'
+    depends_on:
+      - api
+    volumes:
+      - caddy-data:/data
+      - caddy-config:/config
+    mem_limit: 128m
+    logging:
+      driver: json-file
+      options: { max-size: 10m, max-file: 3 }
+
+volumes:
+  caddy-data:
+  caddy-config:

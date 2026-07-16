@@ -175,7 +175,13 @@ describe('procesarPush — merma sin envío (regresión de 0003)', () => {
         d.ev(cid, { tipo: 'comanda_creada', tipoServicio: 'para_llevar' }, { id: uuid() }),
         d.ev(
           cid,
-          { tipo: 'linea_agregada', productoId: ID.pastor, nombreProducto: 'Pastor', precioUnitario: 1800, cantidad: 1 },
+          {
+            tipo: 'linea_agregada',
+            productoId: ID.pastor,
+            nombreProducto: 'Pastor',
+            precioUnitario: 1800,
+            cantidad: 1,
+          },
           { id: uuid(), detalleId: did },
         ),
         // Se cancela ANTES de enviar a cocina: enviadaAt debe quedar NULL.
@@ -204,7 +210,12 @@ describe('procesarPush — domicilio', () => {
           {
             tipo: 'comanda_creada',
             tipoServicio: 'domicilio',
-            domicilio: { nombreCliente: 'María', telefono: '7711234567', direccion: 'Juárez 45', referencias: 'portón verde' },
+            domicilio: {
+              nombreCliente: 'María',
+              telefono: '7711234567',
+              direccion: 'Juárez 45',
+              referencias: 'portón verde',
+            },
           },
           { id: uuid() },
         ),
@@ -231,7 +242,13 @@ describe('procesarPull', () => {
         d.ev(cid, { tipo: 'comanda_creada', tipoServicio: 'para_llevar' }, { id: uuid() }),
         d.ev(
           cid,
-          { tipo: 'linea_agregada', productoId: ID.pastor, nombreProducto: 'Pastor', precioUnitario: 1800, cantidad: 1 },
+          {
+            tipo: 'linea_agregada',
+            productoId: ID.pastor,
+            nombreProducto: 'Pastor',
+            precioUnitario: 1800,
+            cantidad: 1,
+          },
           { id: uuid(), detalleId: uuid() },
         ),
       ],

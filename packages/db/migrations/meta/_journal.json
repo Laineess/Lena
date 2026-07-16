@@ -36,6 +36,13 @@
       "when": 1784190771192,
       "tag": "0004_auth",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1784228127453,
+      "tag": "0005_umbrales_cocina",
+      "breakpoints": true
     }
   ]
 }

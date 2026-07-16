@@ -88,14 +88,10 @@ export function generaMerma(estadoLinea: EstadoLinea, rolQuienCancela: Rol): boo
 
 export type Resolucion = 'gana_a' | 'gana_b' | 'ambos' | 'conflicto';
 
-export function resolverConflicto(
-  tipoA: TipoEvento,
-  tipoB: TipoEvento,
-): Resolucion {
+export function resolverConflicto(tipoA: TipoEvento, tipoB: TipoEvento): Resolucion {
   if (tipoA === tipoB) return 'ambos';
 
-  const esCancelacion = (t: TipoEvento) =>
-    t === 'comanda_cancelada' || t === 'linea_cancelada';
+  const esCancelacion = (t: TipoEvento) => t === 'comanda_cancelada' || t === 'linea_cancelada';
   if (tipoA === 'comanda_cobrada' && tipoB !== 'comanda_reabierta') return 'gana_a';
   if (tipoB === 'comanda_cobrada' && tipoA !== 'comanda_reabierta') return 'gana_b';
 

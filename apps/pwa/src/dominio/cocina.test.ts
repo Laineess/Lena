@@ -2,7 +2,15 @@ import { randomUUID } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { EsquemaEvento, aEventoDominio, parsearHlc } from '@lena/shared';
 import type { Evento, EventoCable } from '@lena/shared';
-import { comandasCanceladas, comandasEnCocina, hlcMaximo, inicioEspera, lineasPendientes, lineasServidas, tierPorMinutos } from './cocina';
+import {
+  comandasCanceladas,
+  comandasEnCocina,
+  hlcMaximo,
+  inicioEspera,
+  lineasPendientes,
+  lineasServidas,
+  tierPorMinutos,
+} from './cocina';
 import { ConstructorEventos } from './eventos';
 
 const ctxBase = {
@@ -40,13 +48,22 @@ function cancelarComanda(comandaId: string, hlcFisico: number, motivo: string): 
 }
 
 describe('tierPorMinutos (RF-F-7)', () => {
-  it('cruza los cuatro umbrales', () => {
+  it('cruza los cuatro umbrales con el default', () => {
     expect(tierPorMinutos(0)).toBe('gris');
     expect(tierPorMinutos(1.9)).toBe('gris');
     expect(tierPorMinutos(2)).toBe('amarillo');
     expect(tierPorMinutos(5)).toBe('naranja');
     expect(tierPorMinutos(8)).toBe('rojo');
     expect(tierPorMinutos(20)).toBe('rojo');
+  });
+
+  it('respeta umbrales configurables por sucursal (RF-F-8)', () => {
+    const rapida = { amarillo: 1, naranja: 3, rojo: 5 };
+    expect(tierPorMinutos(1, rapida)).toBe('amarillo');
+    expect(tierPorMinutos(3, rapida)).toBe('naranja');
+    expect(tierPorMinutos(5, rapida)).toBe('rojo');
+    // Con el default, 5 min sería solo naranja.
+    expect(tierPorMinutos(5)).toBe('naranja');
   });
 });
 

@@ -59,7 +59,8 @@ async function fallosRecientes(db: Db, dispositivoId: string): Promise<Date[]> {
 
   const fallos: Date[] = [];
   for (const f of filas) {
-    if (f.exito) fallos.length = 0; // un éxito reinicia la cuenta
+    if (f.exito)
+      fallos.length = 0; // un éxito reinicia la cuenta
     else fallos.push(f.createdAt);
   }
   return fallos;
@@ -81,10 +82,7 @@ async function emitirSesion(db: Db, s: Sesion, familia?: string): Promise<{ acce
 
 // ── Login de administrador (email + contraseña) ──────────────
 
-export async function loginAdmin(
-  db: Db,
-  datos: { email: string; password: string; ip?: string },
-): Promise<Resultado> {
+export async function loginAdmin(db: Db, datos: { email: string; password: string; ip?: string }): Promise<Resultado> {
   const [u] = await db
     .select()
     .from(usuario)
@@ -112,7 +110,12 @@ export async function loginPin(
 
   // RS-A-3: solo desde un dispositivo registrado y activo, con su credencial.
   if (!disp || !disp.activo || !disp.tokenHash || !tokenCoincide(datos.tokenDispositivo, disp.tokenHash)) {
-    await registrarIntento(db, { dispositivoId: datos.dispositivoId, exito: false, motivo: 'dispositivo', ip: datos.ip });
+    await registrarIntento(db, {
+      dispositivoId: datos.dispositivoId,
+      exito: false,
+      motivo: 'dispositivo',
+      ip: datos.ip,
+    });
     return { ok: false, motivo: 'dispositivo no autorizado' };
   }
 
@@ -186,7 +189,10 @@ export async function refrescar(db: Db, datos: { refresh: string; ip?: string })
 }
 
 export async function logout(db: Db, refresh: string): Promise<void> {
-  await db.update(sesionTbl).set({ revocadaAt: new Date() }).where(eq(sesionTbl.refreshHash, hashToken(refresh)));
+  await db
+    .update(sesionTbl)
+    .set({ revocadaAt: new Date() })
+    .where(eq(sesionTbl.refreshHash, hashToken(refresh)));
 }
 
 // ── Dispositivos (RS-A-9) ────────────────────────────────────

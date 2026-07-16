@@ -1,0 +1,12 @@
+# Imagen web: compila la PWA y la sirve con Caddy (TLS automático + proxy al
+# API). El .dockerignore excluye node_modules/dist.
+FROM node:22-alpine AS build
+RUN npm install -g pnpm@9.15.0
+WORKDIR /app
+COPY . .
+RUN pnpm install --frozen-lockfile
+RUN pnpm --filter @lena/pwa build
+
+FROM caddy:2-alpine
+COPY Caddyfile /etc/caddy/Caddyfile
+COPY --from=build /app/apps/pwa/dist /srv/pwa

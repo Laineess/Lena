@@ -3,24 +3,35 @@
 export type SonidoCocina = 'nueva' | 'regresa' | 'cancela' | 'tic';
 
 let ctx: AudioContext | null = null;
+// Volumen 0–1, persistido: una cocina ruidosa necesita subirlo (09 §6.5).
+let volumen = Number(localStorage.getItem('lena.volumen') ?? '0.8');
+
+export function fijarVolumen(v: number): void {
+  volumen = Math.min(1, Math.max(0, v));
+  localStorage.setItem('lena.volumen', String(volumen));
+}
+export function obtenerVolumen(): number {
+  return volumen;
+}
 
 // El navegador exige un gesto del usuario para arrancar el audio; se llama al
 // primer toque (p. ej. al entrar a cocina).
 export function desbloquearAudio(): void {
   if (!ctx) {
-    const Ctor = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    const Ctor =
+      window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
     if (Ctor) ctx = new Ctor();
   }
   void ctx?.resume();
 }
 
-function tono(frecuencia: number, inicio: number, duracion: number, volumen = 0.3): void {
-  if (!ctx) return;
+function tono(frecuencia: number, inicio: number, duracion: number, vol = 0.3): void {
+  if (!ctx || volumen === 0) return;
   const osc = ctx.createOscillator();
   const gain = ctx.createGain();
   osc.frequency.value = frecuencia;
   osc.type = 'sine';
-  gain.gain.setValueAtTime(volumen, ctx.currentTime + inicio);
+  gain.gain.setValueAtTime(vol * volumen, ctx.currentTime + inicio);
   gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + inicio + duracion);
   osc.connect(gain).connect(ctx.destination);
   osc.start(ctx.currentTime + inicio);

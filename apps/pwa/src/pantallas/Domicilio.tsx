@@ -57,7 +57,7 @@ export function Domicilio({ onListo, onCancelar }: Props) {
         </label>
 
         {/* RS-P-3: el aviso de privacidad se enlaza donde se recolecta el dato. */}
-        <a href="/aviso-privacidad" target="_blank" rel="noreferrer" className="text-sm text-info underline">
+        <a href="/aviso-privacidad.html" target="_blank" rel="noreferrer" className="text-sm text-info underline">
           🔒 Aviso de privacidad
         </a>
       </div>
