@@ -1,0 +1,128 @@
+// Servidor de sincronización (2.5, ADR-005).
+//
+// El servidor NO empuja eventos por el socket: solo avisa "hay novedades" y el
+// cliente jala. Un solo camino de entrega (el pull con cursor), imposible de
+// perder en una reconexión.
+import websocket from '@fastify/websocket';
+import Fastify from 'fastify';
+import type { FastifyInstance } from 'fastify';
+import { EsquemaPull, EsquemaPush } from '@lena/shared';
+import type { MensajeServidor } from '@lena/shared';
+import { crearDb } from './db';
+import { procesarPull } from './sync/pull';
+import { procesarPush } from './sync/push';
+
+const CANAL = 'lena_sync';
+
+export interface Servidor {
+  app: FastifyInstance;
+  cerrar(): Promise<void>;
+}
+
+export async function construirServidor(urlApp?: string): Promise<Servidor> {
+  const { db, sql } = crearDb(urlApp);
+  const app = Fastify({ logger: false });
+  await app.register(websocket);
+
+  // Sockets suscritos, agrupados por sucursal.
+  const suscritos = new Map<string, Set<WebSocket>>();
+
+  function avisar(sucursalId: string, seq: number): void {
+    const sockets = suscritos.get(sucursalId);
+    if (!sockets) return;
+    const msg: MensajeServidor = { tipo: 'hay_novedades', sucursalId, seq };
+    const texto = JSON.stringify(msg);
+    for (const s of sockets) {
+      // readyState 1 = OPEN
+      if (s.readyState === 1) s.send(texto);
+    }
+  }
+
+  // Una conexión dedicada escucha los NOTIFY y reparte a los sockets. Este es
+  // el único puente entre lo que pasa en la base y los clientes conectados.
+  const listen = await sql.listen(CANAL, (payload) => {
+    try {
+      const { sucursalId, seq } = JSON.parse(payload) as { sucursalId: string; seq: number };
+      avisar(sucursalId, seq);
+    } catch {
+      // Un NOTIFY con basura no debe tumbar el servidor.
+    }
+  });
+
+  app.get('/health', async () => ({ ok: true }));
+
+  app.post('/sync/push', async (req, reply) => {
+    const parsed = EsquemaPush.safeParse(req.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: 'peticion_invalida', detalle: parsed.error.issues });
+    }
+    const r = await procesarPush(db, parsed.data);
+
+    // Avisar a la(s) sucursal(es) tocada(s). El NOTIFY viaja por Postgres, así
+    // que también llega a otras instancias del API (multi-proceso, fase 3).
+    const sucursales = new Set(parsed.data.eventos.map((e) => e.sucursalId));
+    for (const sucursalId of sucursales) {
+      await sql`SELECT pg_notify(${CANAL}, ${JSON.stringify({ sucursalId, seq: r.seq })})`;
+    }
+    return r;
+  });
+
+  app.get('/sync/pull', async (req, reply) => {
+    const parsed = EsquemaPull.safeParse(req.query);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: 'peticion_invalida', detalle: parsed.error.issues });
+    }
+    return procesarPull(db, parsed.data);
+  });
+
+  app.get('/sync/ws', { websocket: true }, (socket) => {
+    const ws = socket as unknown as WebSocket;
+    let sucursal: string | null = null;
+
+    ws.addEventListener('message', (ev: MessageEvent) => {
+      let msg: { tipo?: string; sucursalId?: string };
+      try {
+        msg = JSON.parse(String(ev.data));
+      } catch {
+        return;
+      }
+      if (msg.tipo === 'suscribir' && msg.sucursalId) {
+        sucursal = msg.sucursalId;
+        const set = suscritos.get(sucursal) ?? new Set();
+        set.add(ws);
+        suscritos.set(sucursal, set);
+      } else if (msg.tipo === 'ping') {
+        const pong: MensajeServidor = { tipo: 'pong' };
+        ws.send(JSON.stringify(pong));
+      }
+    });
+
+    ws.addEventListener('close', () => {
+      if (sucursal) suscritos.get(sucursal)?.delete(ws);
+    });
+  });
+
+  return {
+    app,
+    async cerrar() {
+      await listen.unlisten();
+      await app.close();
+      await sql.end();
+    },
+  };
+}
+
+// Arranque directo: node/tsx src/servidor.ts
+if (import.meta.url === `file://${process.argv[1]}`) {
+  const puerto = Number(process.env.API_PORT ?? 3000);
+  const srv = await construirServidor();
+  await srv.app.listen({ port: puerto, host: '0.0.0.0' });
+  // eslint-disable-next-line no-console
+  console.log(`API de sincronización en :${puerto}`);
+  for (const sig of ['SIGINT', 'SIGTERM'] as const) {
+    process.on(sig, async () => {
+      await srv.cerrar();
+      process.exit(0);
+    });
+  }
+}

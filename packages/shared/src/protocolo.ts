@@ -109,6 +109,8 @@ export type RazonRechazo =
   | 'comanda_desconocida'
   | 'deriva_de_reloj'
   | 'sucursal_ajena'
+  | 'sin_turno_abierto'
+  | 'evento_malformado'
   | 'duplicado_con_otro_contenido';
 
 export interface EventoRechazado {

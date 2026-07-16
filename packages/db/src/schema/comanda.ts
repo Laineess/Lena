@@ -166,10 +166,15 @@ export const comandaDetalle = pgTable(
     index('comanda_detalle_producto_idx').on(t.productoId),
     check('cantidad_positiva', sql`${t.cantidad} > 0`),
     check('precio_no_negativo', sql`${t.precioUnitario} >= 0`),
+    // enviadaAt = cuándo cruzó a cocina. Una línea cancelada pudo NO haber
+    // cruzado (se canceló en borrador, o nació cancelada porque la comanda ya
+    // estaba cerrada, 05 §5): en ese caso enviadaAt es NULL y es correcto. El
+    // check anterior lo prohibía y reventaba el push del primer evento así.
     check(
       'enviada_tiene_fecha',
       sql`(${t.estado} = 'borrador' AND ${t.enviadaAt} IS NULL)
-       OR (${t.estado} <> 'borrador' AND ${t.enviadaAt} IS NOT NULL)`,
+       OR (${t.estado} IN ('pendiente', 'en_preparacion', 'lista') AND ${t.enviadaAt} IS NOT NULL)
+       OR (${t.estado} = 'cancelada')`,
     ),
   ],
 );
