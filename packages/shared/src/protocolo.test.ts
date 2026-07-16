@@ -219,6 +219,35 @@ describe('dinero — el cable no deja entrar lo que la base rechazaría', () => 
   });
 });
 
+// ── Domicilio (RF-E-17, RS-P-1) ──────────────────────────────
+
+describe('domicilio en comanda_creada', () => {
+  const creada = (domicilio: unknown) =>
+    EsquemaEvento.safeParse({
+      ...base,
+      tipo: 'comanda_creada',
+      payload: { tipo: 'comanda_creada', tipoServicio: 'domicilio', domicilio },
+    });
+
+  it('acepta domicilio con teléfono y dirección', () => {
+    expect(creada({ nombreCliente: 'María', telefono: '7711234567', direccion: 'Juárez 45' }).success).toBe(true);
+  });
+
+  it('rechaza teléfono demasiado corto o dirección vacía', () => {
+    expect(creada({ nombreCliente: 'María', telefono: '123', direccion: 'Juárez 45' }).success).toBe(false);
+    expect(creada({ nombreCliente: 'María', telefono: '7711234567', direccion: '' }).success).toBe(false);
+  });
+
+  it('para_llevar no necesita domicilio', () => {
+    const r = EsquemaEvento.safeParse({
+      ...base,
+      tipo: 'comanda_creada',
+      payload: { tipo: 'comanda_creada', tipoServicio: 'para_llevar' },
+    });
+    expect(r.success).toBe(true);
+  });
+});
+
 // ── Motivos (RS-U-3) ─────────────────────────────────────────
 
 describe('motivos', () => {

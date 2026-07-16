@@ -65,6 +65,40 @@ describe('ciclo de vida', () => {
     expect(c?.total).toBe(0);
   });
 
+  it('domicilio: los datos del cliente viajan en comanda_creada (RF-E-17)', () => {
+    const ev = constructor();
+    const c = plegarComanda(COMANDA, [
+      ev({
+        tipo: 'comanda_creada',
+        tipoServicio: 'domicilio',
+        domicilio: { nombreCliente: 'María', telefono: '7711234567', direccion: 'Juárez 45' },
+      }),
+    ]);
+    expect(c?.tipoServicio).toBe('domicilio');
+    expect(c?.domicilio).toEqual({ nombreCliente: 'María', telefono: '7711234567', direccion: 'Juárez 45' });
+  });
+
+  it('RF-E-7: una adición NO reinicia el estado de las líneas anteriores', () => {
+    const ev = constructor();
+    const eventos = [
+      ev({ tipo: 'comanda_creada', tipoServicio: 'para_llevar' }),
+      ev(PASTOR, { detalleId: 'd-1' }),
+      ev({ tipo: 'comanda_enviada' }),
+      ev({ tipo: 'linea_lista' }, { rolActor: 'cocina', detalleId: 'd-1' }),
+      // Adición: nueva línea + otro envío.
+      ev({ ...PASTOR, cantidad: 1 }, { detalleId: 'd-2' }),
+      ev({ tipo: 'comanda_enviada' }),
+    ];
+    const c = plegarComanda(COMANDA, eventos);
+    const l1 = c?.lineas.find((l) => l.id === 'd-1');
+    const l2 = c?.lineas.find((l) => l.id === 'd-2');
+    // La primera línea sigue lista; el segundo envío no la retrocedió.
+    expect(l1?.estado).toBe('lista');
+    expect(l2?.estado).toBe('pendiente');
+    // La comanda vuelve a 'enviada' porque hay algo nuevo en cocina.
+    expect(c?.estado).toBe('enviada');
+  });
+
   it('sin eventos no hay comanda', () => {
     expect(plegarComanda(COMANDA, [])).toBeNull();
   });

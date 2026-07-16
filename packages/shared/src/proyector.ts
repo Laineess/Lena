@@ -33,6 +33,7 @@ interface Acumulador {
   meseroId: string;
   tipoServicio: Comanda['tipoServicio'];
   mesaId?: string;
+  domicilio?: Comanda['domicilio'];
   lineas: Map<string, Linea>;
   pagos: Pago[];
   cancelada: { motivo: string } | null;
@@ -76,6 +77,7 @@ export function plegarComanda(comandaId: string, eventos: readonly Evento[]): Co
     sucursalId: acc.sucursalId,
     tipoServicio: acc.tipoServicio,
     ...(acc.mesaId !== undefined ? { mesaId: acc.mesaId } : {}),
+    ...(acc.domicilio !== undefined ? { domicilio: acc.domicilio } : {}),
     meseroId: acc.meseroId,
     estado,
     lineas,
@@ -95,6 +97,7 @@ function aplicar(acc: Acumulador, e: Evento): void {
       acc.meseroId = e.actorId;
       acc.tipoServicio = p.tipoServicio;
       if (p.mesaId !== undefined) acc.mesaId = p.mesaId;
+      if (p.domicilio !== undefined) acc.domicilio = p.domicilio;
       break;
 
     case 'linea_agregada': {

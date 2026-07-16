@@ -19,11 +19,21 @@ const metodoPago = z.enum(['efectivo', 'tarjeta', 'transferencia']);
 const tipoServicio = z.enum(['mesa', 'para_llevar', 'domicilio']);
 const motivo = z.string().trim().min(1).max(500); // se audita: vacío no sirve (RS-U-3)
 
+// Datos del cliente a domicilio (RF-E-17). LFPDPPP: el mínimo para entregar,
+// nada más (RS-P-1). Teléfono y dirección obligatorios.
+const domicilio = z.object({
+  nombreCliente: z.string().trim().min(1).max(120),
+  telefono: z.string().trim().min(7).max(20),
+  direccion: z.string().trim().min(1).max(300),
+  referencias: z.string().trim().max(300).optional(),
+});
+
 const payloads = {
   comanda_creada: z.object({
     tipo: z.literal('comanda_creada'),
     tipoServicio,
     mesaId: uuid.optional(),
+    domicilio: domicilio.optional(),
   }),
   linea_agregada: z.object({
     tipo: z.literal('linea_agregada'),

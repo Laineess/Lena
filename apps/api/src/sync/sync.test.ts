@@ -3,7 +3,7 @@ import { eq } from 'drizzle-orm';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { formatearHlc } from '@lena/shared';
 import type { EventoCable } from '@lena/shared';
-import { comanda, comandaDetalle, comandaEvento } from '@lena/db';
+import { comanda, comandaDetalle, comandaDomicilio, comandaEvento } from '@lena/db';
 import { procesarPull } from './pull';
 import { procesarPush } from './push';
 import { abrirTurno, app, cerrarConexiones, cerrarTurno, dispositivo, ID, limpiar } from './fixtures';
@@ -187,6 +187,35 @@ describe('procesarPush — merma sin envío (regresión de 0003)', () => {
     const [det] = await app.db.select().from(comandaDetalle).where(eq(comandaDetalle.id, did));
     expect(det?.estado).toBe('cancelada');
     expect(det?.enviadaAt).toBeNull();
+  });
+});
+
+// ── Domicilio (RF-E-17) ──────────────────────────────────────
+
+describe('procesarPush — domicilio', () => {
+  it('materializa comanda_domicilio con los datos del cliente', async () => {
+    const cid = uuid();
+    const d = dispositivo('A');
+    const r = await procesarPush(app.db, {
+      dispositivoId: ID.tabletA,
+      eventos: [
+        d.ev(
+          cid,
+          {
+            tipo: 'comanda_creada',
+            tipoServicio: 'domicilio',
+            domicilio: { nombreCliente: 'María', telefono: '7711234567', direccion: 'Juárez 45', referencias: 'portón verde' },
+          },
+          { id: uuid() },
+        ),
+      ],
+    });
+    expect(r.rechazados).toHaveLength(0);
+
+    const [dom] = await app.db.select().from(comandaDomicilio).where(eq(comandaDomicilio.comandaId, cid));
+    expect(dom?.telefono).toBe('7711234567');
+    expect(dom?.direccion).toBe('Juárez 45');
+    expect(dom?.referencias).toBe('portón verde');
   });
 });
 

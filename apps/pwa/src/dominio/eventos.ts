@@ -2,7 +2,7 @@
 // sesión: cada evento propio avanza el reloj (ADR-003).
 import { v7 as uuidv7 } from 'uuid';
 import { EsquemaEvento, RelojHlc } from '@lena/shared';
-import type { EventoCable, TipoServicio } from '@lena/shared';
+import type { Domicilio, EventoCable, TipoServicio } from '@lena/shared';
 
 export interface Contexto {
   sucursalId: string;
@@ -41,13 +41,28 @@ export class ConstructorEventos {
     };
   }
 
+  private lineaAgregada(comandaId: string, l: LineaBorrador): EventoCable {
+    return EsquemaEvento.parse({
+      ...this.base(comandaId, uuidv7()),
+      tipo: 'linea_agregada',
+      payload: {
+        tipo: 'linea_agregada',
+        productoId: l.productoId,
+        nombreProducto: l.nombreProducto,
+        precioUnitario: l.precioUnitario,
+        cantidad: l.cantidad,
+        ...(l.notas ? { notas: l.notas } : {}),
+      },
+    });
+  }
+
   // Arma la comanda completa a enviar: creación + líneas + envío a cocina.
   // Se valida con EsquemaEvento: si algo está mal, se descubre aquí y no en el
   // servidor (el mismo contrato en ambos lados, RNF-M-7).
   armarComanda(
     tipoServicio: TipoServicio,
     lineas: readonly LineaBorrador[],
-    opts: { mesaId?: string } = {},
+    opts: { mesaId?: string; domicilio?: Domicilio } = {},
   ): { comandaId: string; eventos: EventoCable[] } {
     const comandaId = uuidv7();
     const eventos: EventoCable[] = [];
@@ -56,31 +71,32 @@ export class ConstructorEventos {
       EsquemaEvento.parse({
         ...this.base(comandaId),
         tipo: 'comanda_creada',
-        payload: { tipo: 'comanda_creada', tipoServicio, ...(opts.mesaId ? { mesaId: opts.mesaId } : {}) },
+        payload: {
+          tipo: 'comanda_creada',
+          tipoServicio,
+          ...(opts.mesaId ? { mesaId: opts.mesaId } : {}),
+          ...(opts.domicilio ? { domicilio: opts.domicilio } : {}),
+        },
       }),
     );
 
-    for (const l of lineas) {
-      eventos.push(
-        EsquemaEvento.parse({
-          ...this.base(comandaId, uuidv7()),
-          tipo: 'linea_agregada',
-          payload: {
-            tipo: 'linea_agregada',
-            productoId: l.productoId,
-            nombreProducto: l.nombreProducto,
-            precioUnitario: l.precioUnitario,
-            cantidad: l.cantidad,
-            ...(l.notas ? { notas: l.notas } : {}),
-          },
-        }),
-      );
-    }
+    for (const l of lineas) eventos.push(this.lineaAgregada(comandaId, l));
 
     eventos.push(
       EsquemaEvento.parse({ ...this.base(comandaId), tipo: 'comanda_enviada', payload: { tipo: 'comanda_enviada' } }),
     );
 
     return { comandaId, eventos };
+  }
+
+  // Adición a una comanda YA enviada (RF-E-7): nuevas líneas + un envío a
+  // cocina. El proyector no reinicia las líneas anteriores (05 §4.3): las nuevas
+  // salen en borrador y este envío solo las mueve a ellas.
+  agregarLineas(comandaId: string, lineas: readonly LineaBorrador[]): EventoCable[] {
+    const eventos = lineas.map((l) => this.lineaAgregada(comandaId, l));
+    eventos.push(
+      EsquemaEvento.parse({ ...this.base(comandaId), tipo: 'comanda_enviada', payload: { tipo: 'comanda_enviada' } }),
+    );
+    return eventos;
   }
 }

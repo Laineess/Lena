@@ -91,8 +91,21 @@ type EventoDe<P> = P extends PayloadEvento
 
 export type Evento = EventoDe<PayloadEvento>;
 
+/** Datos del cliente a domicilio (RF-E-17). LFPDPPP: el mínimo para entregar. */
+export interface Domicilio {
+  readonly nombreCliente: string;
+  readonly telefono: string;
+  readonly direccion: string;
+  readonly referencias?: string;
+}
+
 export type PayloadEvento =
-  | { readonly tipo: 'comanda_creada'; readonly tipoServicio: TipoServicio; readonly mesaId?: string }
+  | {
+      readonly tipo: 'comanda_creada';
+      readonly tipoServicio: TipoServicio;
+      readonly mesaId?: string;
+      readonly domicilio?: Domicilio;
+    }
   | {
       readonly tipo: 'linea_agregada';
       readonly productoId: string;
@@ -142,6 +155,7 @@ export interface Comanda {
   readonly sucursalId: string;
   readonly tipoServicio: TipoServicio;
   readonly mesaId?: string;
+  readonly domicilio?: Domicilio;
   readonly meseroId: string;
   readonly estado: EstadoComanda;
   readonly lineas: readonly Linea[];

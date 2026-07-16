@@ -72,3 +72,18 @@ export async function obtenerCatalogo(token: string): Promise<Catalogo> {
   if (!res.ok) throw new ErrorApi(res.status, {});
   return res.json() as Promise<Catalogo>;
 }
+
+export interface ComandaHistorial {
+  id: string;
+  folio: number | null;
+  tipoServicio: string;
+  estado: string;
+  total: number; // centavos
+  cerradaAt: string | null;
+}
+
+export async function obtenerHistorial(token: string): Promise<ComandaHistorial[]> {
+  const res = await fetch('/comandas', { headers: { authorization: `Bearer ${token}` } });
+  if (!res.ok) throw new ErrorApi(res.status, {});
+  return res.json() as Promise<ComandaHistorial[]>;
+}

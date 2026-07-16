@@ -4,9 +4,11 @@ import type { Catalogo, DatosSesion } from './dominio/api';
 import { crearMotor, reanudar, tokenAcceso } from './dominio/motor';
 import type { Motor } from './dominio/motor';
 import { Captura } from './pantallas/Captura';
+import { Comandas } from './pantallas/Comandas';
 import { Ingreso } from './pantallas/Ingreso';
 
 type Estado = 'cargando' | 'ingreso' | 'captura';
+type Vista = { v: 'captura' } | { v: 'comandas' } | { v: 'adicion'; comandaId: string; etiqueta: string };
 
 export function App() {
   const [estado, setEstado] = useState<Estado>('cargando');
@@ -14,6 +16,7 @@ export function App() {
   const [catalogo, setCatalogo] = useState<Catalogo | null>(null);
   const [enLinea, setEnLinea] = useState(navigator.onLine);
   const [pendientes, setPendientes] = useState(0);
+  const [vista, setVista] = useState<Vista>({ v: 'captura' });
   const motorRef = useRef<Motor | null>(null);
 
   const entrar = useCallback(async (datos: DatosSesion) => {
@@ -62,14 +65,33 @@ export function App() {
   if (estado === 'ingreso' || !sesion || !catalogo) {
     return <Ingreso onIngreso={entrar} />;
   }
+
+  const motor = motorRef.current as Motor;
+  const enLineaReal = enLinea && tokenAcceso() !== null;
+
+  if (vista.v === 'comandas') {
+    return (
+      <Comandas
+        motor={motor}
+        token={sesion.acceso}
+        onAgregar={(comandaId, etiqueta) => setVista({ v: 'adicion', comandaId, etiqueta })}
+        onVolver={() => setVista({ v: 'captura' })}
+      />
+    );
+  }
+
   return (
     <Captura
       sesion={sesion}
       catalogo={catalogo}
-      motor={motorRef.current as Motor}
-      enLinea={enLinea && tokenAcceso() !== null}
+      motor={motor}
+      enLinea={enLineaReal}
       pendientes={pendientes}
       onSincronizar={() => void sincronizar()}
+      onVerComandas={() => setVista({ v: 'comandas' })}
+      {...(vista.v === 'adicion'
+        ? { adicion: { comandaId: vista.comandaId, etiqueta: vista.etiqueta }, onListo: () => setVista({ v: 'comandas' }) }
+        : {})}
     />
   );
 }

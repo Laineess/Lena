@@ -49,4 +49,23 @@ describe('ConstructorEventos', () => {
     const creada = eventos[0]!;
     expect(creada.payload).toMatchObject({ tipo: 'comanda_creada', tipoServicio: 'mesa' });
   });
+
+  it('domicilio viaja en el payload de creación (RF-E-17)', () => {
+    const c = new ConstructorEventos(ctx);
+    const { eventos } = c.armarComanda('domicilio', [linea], {
+      domicilio: { nombreCliente: 'Ana', telefono: '7711234567', direccion: 'Centro 1' },
+    });
+    expect(eventos[0]!.payload).toMatchObject({
+      tipoServicio: 'domicilio',
+      domicilio: { telefono: '7711234567' },
+    });
+  });
+
+  it('agregarLineas produce líneas + un envío para la comanda dada (RF-E-7)', () => {
+    const c = new ConstructorEventos(ctx);
+    const comandaId = '018f1a2b-0000-7000-8000-0000000000aa';
+    const eventos = c.agregarLineas(comandaId, [linea, { ...linea, cantidad: 1 }]);
+    expect(eventos.map((e) => e.tipo)).toEqual(['linea_agregada', 'linea_agregada', 'comanda_enviada']);
+    expect(eventos.every((e) => e.comandaId === comandaId)).toBe(true);
+  });
 });

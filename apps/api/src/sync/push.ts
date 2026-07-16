@@ -13,7 +13,7 @@ import {
   plegarComanda,
 } from '@lena/shared';
 import type { EventoCable, EventoRechazado, PeticionPush, RespuestaPush } from '@lena/shared';
-import { comanda, comandaDetalle, comandaEvento, corteCaja } from '@lena/db';
+import { comanda, comandaDetalle, comandaDomicilio, comandaEvento, corteCaja } from '@lena/db';
 import type { Db } from '../db';
 import { aDominio, aFila, mismoContenido } from './eventos';
 
@@ -136,7 +136,11 @@ export async function procesarPush(
           .from(comanda)
           .where(eq(comanda.sucursalId, creacion.sucursalId));
         const folio = Number(max?.folio ?? 0) + 1;
-        const p = creacion.payload as { tipoServicio: 'mesa' | 'para_llevar' | 'domicilio'; mesaId?: string };
+        const p = creacion.payload as {
+          tipoServicio: 'mesa' | 'para_llevar' | 'domicilio';
+          mesaId?: string;
+          domicilio?: { nombreCliente: string; telefono: string; direccion: string; referencias?: string };
+        };
         await tx.insert(comanda).values({
           id: cid,
           sucursalId: creacion.sucursalId,
@@ -149,6 +153,16 @@ export async function procesarPush(
           total: '0',
           abiertaAt: fecha(creacion.hlc),
         });
+        // Datos personales del cliente a domicilio (RF-E-17, LFPDPPP).
+        if (p.domicilio) {
+          await tx.insert(comandaDomicilio).values({
+            comandaId: cid,
+            nombreCliente: p.domicilio.nombreCliente,
+            telefono: p.domicilio.telefono,
+            direccion: p.domicilio.direccion,
+            referencias: p.domicilio.referencias ?? null,
+          });
+        }
         folios.push({ comandaId: cid, folio });
       }
 

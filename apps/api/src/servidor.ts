@@ -14,6 +14,7 @@ import { crearDb } from './db';
 import { requiereSesion } from './auth/middleware';
 import { registrarRutasAuth } from './auth/rutas';
 import { registrarRutasCatalogo } from './catalogo/rutas';
+import { registrarRutasComandas } from './comandas/rutas';
 import { procesarPull } from './sync/pull';
 import { procesarPush } from './sync/push';
 
@@ -71,6 +72,7 @@ export async function construirServidor(urlApp?: string, opts: OpcionesServidor 
 
   registrarRutasAuth(app, db, opts.limiteAuth ?? 10);
   registrarRutasCatalogo(app, db);
+  registrarRutasComandas(app, db);
 
   app.post('/sync/push', { preHandler: requiereSesion }, async (req, reply) => {
     const parsed = EsquemaPush.safeParse(req.body);
