@@ -167,6 +167,27 @@ export interface ResumenMerma {
   readonly costoTotal: Centavos;
 }
 
+/**
+ * Una merma de producto ya registrada (RF-E-19). Se deriva del log: cada
+ * cancelación que genera merma produce uno de estos. Es el control antifraude
+ * (Visión §1): la comida que se hizo y nadie pagó, con costo y motivo.
+ */
+export interface MermaRegistro {
+  readonly id: string;
+  readonly comandaId: string;
+  readonly sucursalId: string;
+  readonly detalleId: string;
+  readonly productoId: string;
+  readonly nombreProducto: string;
+  readonly cantidad: number;
+  readonly costoEstimado: Centavos;
+  readonly estadoAlCancelar: EstadoLinea;
+  readonly motivo: string;
+  readonly actorId: string;
+  /** ms del HLC de la cancelación: la fecha contable de la merma. */
+  readonly fechaMs: number;
+}
+
 // ── Conversión en la frontera ────────────────────────────────
 
 /** `"18.50"` (numeric de Postgres) → `1850` centavos. */

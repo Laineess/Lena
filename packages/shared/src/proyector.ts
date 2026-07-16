@@ -10,9 +10,10 @@
  * EL LOG ES LA VERDAD (P1 / ADR-002). `comanda.estado` y `comanda.total` en la
  * base son proyecciones cacheadas: siempre recomputables plegando eventos.
  */
-import { compararHlc } from './hlc';
+import { v5 as uuidv5 } from 'uuid';
+import { compararHlc, parsearHlc } from './hlc';
 import { generaMerma, transicionLineaValida } from './maquina-estados';
-import type { Comanda, EstadoComanda, EstadoLinea, Evento, Linea, Pago, ResumenMerma } from './tipos';
+import type { Comanda, EstadoComanda, EstadoLinea, Evento, Linea, MermaRegistro, Pago, ResumenMerma } from './tipos';
 
 /** Ordena por HLC. NO por `ts_cliente`: los relojes de tablet mienten. */
 export function ordenarEventos(eventos: readonly Evento[]): Evento[] {
@@ -336,4 +337,119 @@ export function calcularMermaSiSeCancela(
 /** Estado de una línea suelta. Útil para la UI de cocina. */
 export function estadoLineaDe(comanda: Comanda, detalleId: string): EstadoLinea | null {
   return comanda.lineas.find((l) => l.id === detalleId)?.estado ?? null;
+}
+
+// ── Merma (RF-E-19, control antifraude) ──────────────────────
+
+// Namespace fijo para derivar ids de merma DETERMINISTAS: la misma cancelación
+// produce siempre el mismo id, así materializar dos veces no duplica.
+const NS_MERMA = '6f1a0c9e-2b3d-4e5f-8a1b-2c3d4e5f6a7b';
+
+interface LineaReplay {
+  productoId: string;
+  nombreProducto: string;
+  precioUnitario: number;
+  cantidad: number;
+  estado: EstadoLinea;
+}
+
+/**
+ * Recorre el log y devuelve las mermas que generaron las cancelaciones
+ * (RF-E-19). Pura y determinista: es la fuente de `merma_producto`.
+ *
+ * A diferencia de `plegarComanda`, aquí importa el estado JUSTO ANTES de cada
+ * cancelación (el plegado final ya lo perdió: todo quedó 'cancelada'). Por eso
+ * se replica la máquina de estados por línea en vez de leer la proyección.
+ *
+ * La regla de quién mermó vive en `generaMerma` (RF-F-14): cocina no merma.
+ */
+export function calcularMermas(comandaId: string, eventos: readonly Evento[]): MermaRegistro[] {
+  const propios = ordenarEventos(eventos.filter((e) => e.comandaId === comandaId));
+  const lineas = new Map<string, LineaReplay>();
+  const mermas: MermaRegistro[] = [];
+  let cerrada = false; // cancelada o cobrada: una línea nueva nace 'cancelada'
+
+  const registrar = (detalleId: string, l: LineaReplay, e: Evento, motivo: string): void => {
+    if (generaMerma(l.estado, e.rolActor)) {
+      mermas.push({
+        id: uuidv5(`${e.id}:${detalleId}`, NS_MERMA),
+        comandaId,
+        sucursalId: e.sucursalId,
+        detalleId,
+        productoId: l.productoId,
+        nombreProducto: l.nombreProducto,
+        cantidad: l.cantidad,
+        costoEstimado: l.precioUnitario * l.cantidad,
+        estadoAlCancelar: l.estado,
+        motivo,
+        actorId: e.actorId,
+        fechaMs: parsearHlc(e.hlc).fisico,
+      });
+    }
+  };
+
+  for (const e of propios) {
+    const p = e.payload;
+    switch (p.tipo) {
+      case 'comanda_cobrada':
+        cerrada = true;
+        break;
+      case 'linea_agregada':
+        if (e.detalleId) {
+          lineas.set(e.detalleId, {
+            productoId: p.productoId,
+            nombreProducto: p.nombreProducto,
+            precioUnitario: p.precioUnitario,
+            cantidad: p.cantidad,
+            estado: cerrada ? 'cancelada' : 'borrador',
+          });
+        }
+        break;
+      case 'linea_modificada': {
+        const l = e.detalleId ? lineas.get(e.detalleId) : undefined;
+        if (l && l.estado !== 'cancelada' && p.cantidad !== undefined) l.cantidad = p.cantidad;
+        break;
+      }
+      case 'linea_eliminada': {
+        const l = e.detalleId ? lineas.get(e.detalleId) : undefined;
+        if (l?.estado === 'borrador') lineas.delete(e.detalleId as string);
+        break;
+      }
+      case 'comanda_enviada':
+        for (const l of lineas.values()) if (l.estado === 'borrador') l.estado = 'pendiente';
+        break;
+      case 'preparacion_iniciada':
+        for (const l of lineas.values())
+          if (transicionLineaValida(l.estado, 'en_preparacion')) l.estado = 'en_preparacion';
+        break;
+      case 'linea_lista': {
+        const l = e.detalleId ? lineas.get(e.detalleId) : undefined;
+        if (l && transicionLineaValida(l.estado, 'lista')) l.estado = 'lista';
+        break;
+      }
+      case 'comanda_lista':
+        for (const l of lineas.values()) if (transicionLineaValida(l.estado, 'lista')) l.estado = 'lista';
+        break;
+      case 'linea_cancelada': {
+        const l = e.detalleId ? lineas.get(e.detalleId) : undefined;
+        if (l && l.estado !== 'cancelada' && !cerrada) {
+          registrar(e.detalleId as string, l, e, p.motivo);
+          l.estado = 'cancelada';
+        }
+        break;
+      }
+      case 'comanda_cancelada':
+        if (!cerrada) {
+          cerrada = true;
+          for (const [id, l] of lineas) {
+            if (l.estado !== 'cancelada') {
+              registrar(id, l, e, p.motivo);
+              l.estado = 'cancelada';
+            }
+          }
+        }
+        break;
+    }
+  }
+  return mermas;
 }

@@ -8,6 +8,7 @@ import {
   DERIVA_MAXIMA_MS,
   aEventoDominio,
   aPesos,
+  calcularMermas,
   eventoPermitido,
   pagosCuadran,
   parsearHlc,
@@ -15,7 +16,14 @@ import {
   totalPagado,
 } from '@lena/shared';
 import type { EventoCable, EventoRechazado, PeticionPush, RespuestaPush } from '@lena/shared';
-import { comanda, comandaDetalle, comandaDomicilio, comandaEvento, corteCaja, pago } from '@lena/db';
+import { comanda, comandaDetalle, comandaDomicilio, comandaEvento, corteCaja, mermaProducto, pago } from '@lena/db';
+
+const FECHA_LOCAL = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'America/Mexico_City',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+});
 import type { Db } from '../db';
 import { aDominio, aFila, mismoContenido } from './eventos';
 
@@ -273,6 +281,24 @@ export async function procesarPush(
           };
         });
       if (pagos.length) await tx.insert(pago).values(pagos).onConflictDoNothing();
+
+      // Merma de producto (RF-E-19): la comida que ya se hizo y se canceló. Es
+      // el control antifraude (Visión §1). Ids deterministas → idempotente.
+      const mermas = calcularMermas(cid, [...existentes, ...aInsertar.map(aEventoDominio)]).map((m) => ({
+        id: m.id,
+        sucursalId: m.sucursalId,
+        comandaId: m.comandaId,
+        detalleId: m.detalleId,
+        productoId: m.productoId,
+        nombreProducto: m.nombreProducto,
+        cantidad: m.cantidad,
+        costoEstimado: aPesos(m.costoEstimado),
+        estadoAlCancelar: m.estadoAlCancelar,
+        motivo: m.motivo,
+        actorId: m.actorId,
+        fecha: FECHA_LOCAL.format(new Date(m.fechaMs)),
+      }));
+      if (mermas.length) await tx.insert(mermaProducto).values(mermas).onConflictDoNothing();
     }
   });
 

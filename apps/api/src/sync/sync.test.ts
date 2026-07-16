@@ -3,7 +3,7 @@ import { eq } from 'drizzle-orm';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { formatearHlc } from '@lena/shared';
 import type { EventoCable } from '@lena/shared';
-import { comanda, comandaDetalle, comandaDomicilio, comandaEvento } from '@lena/db';
+import { comanda, comandaDetalle, comandaDomicilio, comandaEvento, mermaProducto } from '@lena/db';
 import { procesarPull } from './pull';
 import { procesarPush } from './push';
 import { abrirTurno, app, cerrarConexiones, cerrarTurno, dispositivo, ID, limpiar } from './fixtures';
@@ -227,6 +227,65 @@ describe('procesarPush — domicilio', () => {
     expect(dom?.telefono).toBe('7711234567');
     expect(dom?.direccion).toBe('Juárez 45');
     expect(dom?.referencias).toBe('portón verde');
+  });
+});
+
+// ── Merma materializada (RF-E-19) ────────────────────────────
+
+describe('procesarPush — merma', () => {
+  it('cancelar una línea enviada registra merma_producto; reenviar no duplica', async () => {
+    const cid = uuid();
+    const det = uuid();
+    const d = dispositivo('A');
+    const eventos = [
+      d.ev(cid, { tipo: 'comanda_creada', tipoServicio: 'para_llevar' }, { id: uuid() }),
+      d.ev(
+        cid,
+        { tipo: 'linea_agregada', productoId: ID.pastor, nombreProducto: 'Pastor', precioUnitario: 1800, cantidad: 3 },
+        { id: uuid(), detalleId: det },
+      ),
+      d.ev(cid, { tipo: 'comanda_enviada' }, { id: uuid() }),
+      d.ev(cid, { tipo: 'linea_cancelada', motivo: 'el cliente se fue' }, { id: uuid(), detalleId: det }),
+    ];
+
+    await procesarPush(app.db, { dispositivoId: ID.tabletA, eventos });
+    const m1 = await app.db.select().from(mermaProducto).where(eq(mermaProducto.comandaId, cid));
+    expect(m1).toHaveLength(1);
+    expect(m1[0]?.costoEstimado).toBe('54.00');
+    expect(m1[0]?.estadoAlCancelar).toBe('pendiente');
+
+    // Reenviar el mismo lote no duplica la merma (id determinista).
+    await procesarPush(app.db, { dispositivoId: ID.tabletA, eventos });
+    const m2 = await app.db.select().from(mermaProducto).where(eq(mermaProducto.comandaId, cid));
+    expect(m2).toHaveLength(1);
+  });
+
+  it('la cocina cancela sin merma (RF-F-14)', async () => {
+    const cid = uuid();
+    const det = uuid();
+    const mesero = dispositivo('A');
+    const coci = dispositivo('K', { actorId: ID.cocinero, rolActor: 'cocina', dispositivoId: ID.tabletB });
+    const meseroEvs = [
+      mesero.ev(cid, { tipo: 'comanda_creada', tipoServicio: 'para_llevar' }, { id: uuid() }),
+      mesero.ev(
+        cid,
+        { tipo: 'linea_agregada', productoId: ID.pastor, nombreProducto: 'Pastor', precioUnitario: 1800, cantidad: 2 },
+        { id: uuid(), detalleId: det },
+      ),
+      mesero.ev(cid, { tipo: 'comanda_enviada' }, { id: uuid() }),
+    ];
+    // La cocina observa lo que recibió antes de cancelar (causalidad): así su
+    // evento va DESPUÉS del envío y la línea está 'pendiente' al cancelar.
+    coci.recibir(meseroEvs[meseroEvs.length - 1]!.hlc);
+    const cancel = coci.ev(
+      cid,
+      { tipo: 'linea_cancelada', motivo: 'se acabó el pastor' },
+      { id: uuid(), detalleId: det },
+    );
+
+    await procesarPush(app.db, { dispositivoId: ID.tabletA, eventos: [...meseroEvs, cancel] });
+    const m = await app.db.select().from(mermaProducto).where(eq(mermaProducto.comandaId, cid));
+    expect(m).toHaveLength(0);
   });
 });
 

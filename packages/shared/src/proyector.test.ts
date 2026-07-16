@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { RelojHlc } from './hlc';
 import { generaMerma } from './maquina-estados';
-import { calcularMermaSiSeCancela, estadoLineaDe, pagosCuadran, plegarComanda } from './proyector';
+import { calcularMermaSiSeCancela, calcularMermas, estadoLineaDe, pagosCuadran, plegarComanda } from './proyector';
 import type { Evento, PayloadEvento, Rol } from './tipos';
 import { aCentavos, aPesos, formatearMoneda } from './tipos';
 
@@ -52,6 +52,74 @@ const PASTOR: PayloadEvento = {
   precioUnitario: 1800,
   cantidad: 3,
 };
+
+// ── Merma registrada (RF-E-19) ───────────────────────────────
+
+describe('calcularMermas', () => {
+  it('el mesero cancela una línea YA enviada → merma con costo y estado', () => {
+    const ev = constructor();
+    const eventos = [
+      ev({ tipo: 'comanda_creada', tipoServicio: 'para_llevar' }),
+      ev(PASTOR, { detalleId: 'd-1' }),
+      ev({ tipo: 'comanda_enviada' }),
+      ev({ tipo: 'linea_cancelada', motivo: 'el cliente se fue' }, { detalleId: 'd-1' }),
+    ];
+    const mermas = calcularMermas(COMANDA, eventos);
+    expect(mermas).toHaveLength(1);
+    expect(mermas[0]).toMatchObject({
+      cantidad: 3,
+      costoEstimado: 5400,
+      estadoAlCancelar: 'pendiente',
+      motivo: 'el cliente se fue',
+    });
+  });
+
+  it('la cocina cancela → NO hay merma (RF-F-14)', () => {
+    const ev = constructor();
+    const eventos = [
+      ev({ tipo: 'comanda_creada', tipoServicio: 'para_llevar' }),
+      ev(PASTOR, { detalleId: 'd-1' }),
+      ev({ tipo: 'comanda_enviada' }),
+      ev({ tipo: 'linea_cancelada', motivo: 'se acabó el pastor' }, { detalleId: 'd-1', rolActor: 'cocina' }),
+    ];
+    expect(calcularMermas(COMANDA, eventos)).toHaveLength(0);
+  });
+
+  it('cancelar en borrador (sin enviar) → NO hay merma', () => {
+    const ev = constructor();
+    const eventos = [
+      ev({ tipo: 'comanda_creada', tipoServicio: 'para_llevar' }),
+      ev(PASTOR, { detalleId: 'd-1' }),
+      ev({ tipo: 'linea_cancelada', motivo: 'me equivoqué' }, { detalleId: 'd-1' }),
+    ];
+    expect(calcularMermas(COMANDA, eventos)).toHaveLength(0);
+  });
+
+  it('comanda_cancelada merma todas las líneas ya enviadas', () => {
+    const ev = constructor();
+    const eventos = [
+      ev({ tipo: 'comanda_creada', tipoServicio: 'para_llevar' }),
+      ev(PASTOR, { detalleId: 'd-1' }),
+      ev({ ...PASTOR, cantidad: 1 }, { detalleId: 'd-2' }),
+      ev({ tipo: 'comanda_enviada' }),
+      ev({ tipo: 'comanda_cancelada', motivo: 'se fue la luz' }),
+    ];
+    const mermas = calcularMermas(COMANDA, eventos);
+    expect(mermas).toHaveLength(2);
+    expect(mermas.reduce((s, m) => s + m.costoEstimado, 0)).toBe(5400 + 1800);
+  });
+
+  it('el id de la merma es determinista: mismo log, mismo id', () => {
+    const ev = constructor();
+    const eventos = [
+      ev({ tipo: 'comanda_creada', tipoServicio: 'para_llevar' }),
+      ev(PASTOR, { detalleId: 'd-1' }),
+      ev({ tipo: 'comanda_enviada' }),
+      ev({ tipo: 'linea_cancelada', motivo: 'x' }, { detalleId: 'd-1' }),
+    ];
+    expect(calcularMermas(COMANDA, eventos)[0]!.id).toBe(calcularMermas(COMANDA, eventos)[0]!.id);
+  });
+});
 
 // ── Ciclo básico ─────────────────────────────────────────────
 
