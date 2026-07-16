@@ -3,6 +3,7 @@
 // El servidor NO empuja eventos por el socket: solo avisa "hay novedades" y el
 // cliente jala. Un solo camino de entrega (el pull con cursor), imposible de
 // perder en una reconexión.
+import { pathToFileURL } from 'node:url';
 import rateLimit from '@fastify/rate-limit';
 import websocket from '@fastify/websocket';
 import Fastify from 'fastify';
@@ -12,6 +13,7 @@ import type { MensajeServidor } from '@lena/shared';
 import { crearDb } from './db';
 import { requiereSesion } from './auth/middleware';
 import { registrarRutasAuth } from './auth/rutas';
+import { registrarRutasCatalogo } from './catalogo/rutas';
 import { procesarPull } from './sync/pull';
 import { procesarPush } from './sync/push';
 
@@ -68,6 +70,7 @@ export async function construirServidor(urlApp?: string, opts: OpcionesServidor 
   app.get('/health', async () => ({ ok: true }));
 
   registrarRutasAuth(app, db, opts.limiteAuth ?? 10);
+  registrarRutasCatalogo(app, db);
 
   app.post('/sync/push', { preHandler: requiereSesion }, async (req, reply) => {
     const parsed = EsquemaPush.safeParse(req.body);
@@ -136,8 +139,9 @@ export async function construirServidor(urlApp?: string, opts: OpcionesServidor 
   };
 }
 
-// Arranque directo: node/tsx src/servidor.ts
-if (import.meta.url === `file://${process.argv[1]}`) {
+// Arranque directo: node/tsx src/servidor.ts. pathToFileURL normaliza la ruta
+// de Windows (backslashes) para que el guard no falle en local.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const puerto = Number(process.env.API_PORT ?? 3000);
   const srv = await construirServidor();
   await srv.app.listen({ port: puerto, host: '0.0.0.0' });

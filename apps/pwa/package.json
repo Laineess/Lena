@@ -1,0 +1,37 @@
+{
+  "name": "@lena/pwa",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@lena/cliente": "workspace:*",
+    "@lena/shared": "workspace:*",
+    "dexie": "^4.4.4",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "uuid": "^11.0.5"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.3",
+    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/react": "^16.3.2",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "^6.0.3",
+    "fake-indexeddb": "^6.2.5",
+    "jsdom": "^29.1.1",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^5.7.2",
+    "vite": "^8.1.5",
+    "vite-plugin-pwa": "^1.3.0",
+    "vitest": "^2.1.9"
+  }
+}

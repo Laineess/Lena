@@ -1,0 +1,79 @@
+@import 'tailwindcss';
+
+/* Sistema de diseño de Leña (09 §2). Tokens como variables de tema de
+   Tailwind v4: se usan como bg-brasa-700, text-piedra-900, etc. */
+@theme {
+  /* Brasa — la marca (09 §2.1) */
+  --color-brasa-50: #fff7ed;
+  --color-brasa-100: #ffedd5;
+  --color-brasa-200: #fed7aa;
+  --color-brasa-300: #fdba74;
+  --color-brasa-400: #fb923c;
+  --color-brasa-500: #f97316;
+  --color-brasa-600: #ea580c;
+  --color-brasa-700: #c2410c; /* botón primario, logo, enlaces */
+  --color-brasa-800: #9a3412;
+  --color-brasa-900: #7c2d12;
+  --color-brasa-950: #431407;
+
+  /* Piedra — neutros warm gray (09 §2.2) */
+  --color-piedra-50: #fafaf9;
+  --color-piedra-100: #f5f5f4;
+  --color-piedra-200: #e7e5e4;
+  --color-piedra-300: #d6d3d1;
+  --color-piedra-400: #a8a29e;
+  --color-piedra-500: #78716c;
+  --color-piedra-600: #57534e;
+  --color-piedra-700: #44403c;
+  --color-piedra-800: #292524;
+  --color-piedra-900: #1c1917;
+  --color-piedra-950: #0c0a09;
+
+  /* Estado — los únicos colores que gritan (09 §2.3). Siempre con icono+texto. */
+  --color-ok: #15803d;
+  --color-atencion: #a16207;
+  --color-error: #b91c1c;
+  --color-info: #1d4ed8;
+
+  /* Tipografía: Inter, con tabulares obligatorias en cifras (09 §2.4) */
+  --font-sans: 'Inter var', 'Inter', system-ui, sans-serif;
+
+  /* Escala de texto (09 §2.4) */
+  --text-display: 2.5rem; /* 40px — total a cobrar */
+  --text-display--line-height: 2.75rem;
+  --text-h1: 1.625rem; /* 26px */
+  --text-h1--line-height: 2rem;
+  --text-h2: 1.25rem; /* 20px */
+  --text-h2--line-height: 1.75rem;
+  --text-body-lg: 1.125rem; /* 18px — listas táctiles */
+  --text-body-lg--line-height: 1.625rem;
+
+  /* Radios (09 §2.5) */
+  --radius-md: 10px;
+  --radius-lg: 14px;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  background: var(--color-piedra-50);
+  color: var(--color-piedra-900);
+  /* Cifras alineadas en toda la app: precios, totales, folios (09 §2.4). */
+  font-variant-numeric: tabular-nums;
+  -webkit-tap-highlight-color: transparent;
+  /* POS: nada de selección accidental ni rebote al hacer scroll. */
+  user-select: none;
+  overscroll-behavior: none;
+}
+
+/* Objetivo táctil general: 48px CSS = 13.6mm en dpr 2.0 (09 §2.6). */
+.tactil {
+  min-width: 48px;
+  min-height: 48px;
+}

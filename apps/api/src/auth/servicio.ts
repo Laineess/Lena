@@ -209,6 +209,29 @@ export async function registrarDispositivo(
   return { dispositivoId: d?.id as string, token };
 }
 
+// Usuarios que pueden entrar desde un dispositivo (RS-A-3): los activos de su
+// sucursal, sin admin. La lista alimenta la pantalla de PIN y se cachea para
+// que el ingreso funcione offline.
+export async function usuariosDeDispositivo(
+  db: Db,
+  dispositivoId: string,
+  tokenDispositivo: string,
+): Promise<{ ok: true; sucursalId: string; usuarios: { id: string; nombre: string; rol: string }[] } | { ok: false }> {
+  const [disp] = await db.select().from(dispositivo).where(eq(dispositivo.id, dispositivoId)).limit(1);
+  if (!disp || !disp.activo || !disp.tokenHash || !tokenCoincide(tokenDispositivo, disp.tokenHash)) {
+    return { ok: false };
+  }
+  const filas = await db
+    .select({ id: usuario.id, nombre: usuario.nombre, rol: usuario.rol })
+    .from(usuario)
+    .where(and(eq(usuario.sucursalId, disp.sucursalId), eq(usuario.activo, true)));
+  return {
+    ok: true,
+    sucursalId: disp.sucursalId,
+    usuarios: filas.filter((u) => u.rol !== 'administrador'),
+  };
+}
+
 export async function revocarDispositivo(db: Db, dispositivoId: string): Promise<void> {
   // El dispositivo pierde acceso al reconectar (el refresh falla). Su outbox
   // sobrevive en el cliente: RS-A-9 exige vaciarla antes de borrar (RS-L-5).
