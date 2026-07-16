@@ -15,6 +15,13 @@
       "when": 1784150564962,
       "tag": "0001_append_only_y_vistas",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1784185595411,
+      "tag": "0002_rol_actor_en_evento",
+      "breakpoints": true
     }
   ]
 }

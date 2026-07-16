@@ -19,6 +19,7 @@ import {
   estadoComanda,
   estadoLinea,
   metodoPago,
+  rolUsuario,
   tipoEvento,
   tipoServicio,
 } from './enums';
@@ -213,6 +214,22 @@ export const comandaEvento = pgTable(
     actorId: uuid('actor_id')
       .notNull()
       .references(() => usuario.id),
+    /**
+     * El rol que tenía el actor AL MOMENTO del evento — no el que tiene hoy.
+     *
+     * Está desnormalizado a propósito y NO se busca en `usuario` al proyectar:
+     *
+     * 1. Corrección histórica. Si Ana cancela una línea siendo mesera y el año
+     *    que viene la ascienden a administradora, esa cancelación debe seguir
+     *    contando como "cancelada por un mesero" — porque así se calculó la
+     *    merma (RF-F-14). Leer el rol actual reescribiría el pasado, que es lo
+     *    mismo que ADR-006 prohíbe con los precios.
+     *
+     * 2. Pureza. Sin este campo, el proyector necesitaría consultar la base y
+     *    dejaría de ser una función pura, perdiendo el property-based testing
+     *    que sostiene RNF-I-6.
+     */
+    rolActor: rolUsuario('rol_actor').notNull(),
     dispositivoId: uuid('dispositivo_id')
       .notNull()
       .references(() => dispositivo.id),

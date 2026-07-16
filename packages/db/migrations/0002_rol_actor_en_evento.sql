@@ -1,0 +1,1 @@
+ALTER TABLE "comanda_evento" ADD COLUMN "rol_actor" "rol_usuario" NOT NULL;
