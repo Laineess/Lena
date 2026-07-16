@@ -22,8 +22,13 @@ function constructor(nodo = 'A') {
   })());
   let n = 0;
 
-  return function ev(
-    payload: PayloadEvento,
+  // Genérico sobre el payload a propósito: así `tipo` se DERIVA de
+  // `payload.tipo` y el helper no puede construir un evento desalineado.
+  // Ojo: eso es justo lo que ocultó el hueco de seguridad —el helper hacía
+  // imposible expresar el desajuste que el cable sí permitía. La correlación
+  // real la impone el tipo `Evento`; esto solo evita repetirla a mano.
+  return function ev<P extends PayloadEvento>(
+    payload: P,
     opts: { detalleId?: string; actorId?: string; rolActor?: Rol } = {},
   ): Evento {
     n += 1;
@@ -38,7 +43,7 @@ function constructor(nodo = 'A') {
       hlc: reloj.ahora(),
       payload,
       ...(opts.detalleId !== undefined ? { detalleId: opts.detalleId } : {}),
-    };
+    } as Evento;
   };
 }
 

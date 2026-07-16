@@ -19,3 +19,4 @@ export * from './hlc';
 export * from './tipos';
 export * from './maquina-estados';
 export * from './proyector';
+export * from './protocolo';

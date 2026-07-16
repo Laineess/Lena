@@ -1,36 +1,3 @@
-/**
- * Hybrid Logical Clock (ADR-003).
- *
- * EL PROBLEMA QUE RESUELVE
- * Las tablets tienen el reloj mal puesto. Siempre. Un `timestamp` de cliente
- * puede venir del futuro o del pasado, y si ordenamos eventos por él, una
- * comanda puede aparecer "entregada" antes que "lista".
- *
- * Un reloj lógico puro (Lamport) arregla el orden causal pero pierde toda
- * relación con el tiempo real: no sabrías si una comanda lleva 2 o 40 minutos.
- * Un HLC combina ambos: ordena causalmente Y se mantiene cerca del reloj de
- * pared.
- *
- * CÓMO
- *   fisico  — el mayor entre el reloj local y el de los mensajes recibidos
- *   logico  — desempata cuando el físico no avanza
- *   nodo    — desempata cuando físico y lógico empatan (dos dispositivos)
- *
- * La invariante que lo hace funcionar: al RECIBIR un HLC remoto, el reloj
- * local salta hacia adelante si el remoto va más adelantado. Así el orden
- * causal se propaga entre dispositivos aunque sus relojes mientan.
- *
- * FORMATO
- *   "000001926f4a1c80-0003-A1B2"
- *    │                │    └── nodo (id de dispositivo, corto)
- *    │                └─────── contador lógico, hex, 4 dígitos
- *    └──────────────────────── milisegundos, hex, 16 dígitos
- *
- * Se ordena LEXICOGRÁFICAMENTE. Eso es a propósito: Postgres puede indexarlo
- * y ordenarlo como texto, sin funciones ni parseo.
- */
-
-/** Un HLC serializado. Ordenable con comparación de strings. */
 export type Hlc = string;
 
 export interface HlcPartes {
@@ -42,17 +9,13 @@ export interface HlcPartes {
 /** El contador lógico cabe en 4 dígitos hex. */
 const LOGICO_MAX = 0xffff;
 
-/**
- * Cuánto se tolera que un reloj remoto venga del futuro.
- *
- * Si una tablet tiene el reloj adelantado 3 días y aceptamos su HLC sin
- * límite, TODOS los eventos futuros de esa sucursal quedan anclados a ese
- * tiempo hasta que el reloj de pared lo alcance — 3 días de cronómetros
- * absurdos en cocina.
- *
- * Con el límite, ese evento se rechaza y se registra como conflicto
- * (RF-J-7) en vez de envenenar el reloj de todos.
- */
+export const NODO_RE = /^[A-Za-z0-9]{1,16}$/;
+export const HLC_RE = /^[0-9a-f]{16}-[0-9a-f]{4}-[A-Za-z0-9]{1,16}$/;
+
+export function hlcBienFormado(hlc: string): boolean {
+  return HLC_RE.test(hlc);
+}
+
 export const DERIVA_MAXIMA_MS = 60_000;
 
 export class ErrorDerivaReloj extends Error {
@@ -126,10 +89,10 @@ export class RelojHlc {
     private readonly nodo: string,
     private readonly ahoraMs: () => number = Date.now,
   ) {
-    if (nodo.length === 0 || nodo.includes('-')) {
-      // El '-' es el separador del formato: un nodo con guiones rompería
-      // parsearHlc() de una forma silenciosa y muy difícil de rastrear.
-      throw new Error(`Nodo inválido: "${nodo}". No puede estar vacío ni contener '-'.`);
+    if (!NODO_RE.test(nodo)) {
+      // Mismo regex que el cable (protocolo.ts): si divergen, el dispositivo
+      // genera HLC que el servidor rechaza y el mesero solo ve "no sincroniza".
+      throw new Error(`Nodo inválido: "${nodo}". Alfanumérico, 1 a 16 caracteres.`);
     }
   }
 

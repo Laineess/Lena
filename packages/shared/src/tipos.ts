@@ -66,35 +66,30 @@ export type TipoEvento =
   | 'linea_cancelada'
   | 'comanda_reabierta';
 
-/**
- * Un evento del log. Append-only, inmutable (ADR-002).
- *
- * `rolActor` está DENTRO del evento a propósito, y no se busca en la tabla
- * `usuario` al proyectar. Dos razones:
- *
- * 1. **Corrección histórica.** Un evento registra lo que era cierto CUANDO
- *    ocurrió. Si Ana cancela una línea siendo mesera y el año que viene la
- *    ascienden a administradora, esa cancelación vieja debe seguir contando
- *    como "cancelada por un mesero" — porque la merma se calculó así.
- *    Buscar el rol actual reescribiría el pasado (y contradiría ADR-006).
- *
- * 2. **Pureza.** Sin este campo, el proyector necesitaría consultar la base
- *    y dejaría de ser una función pura — perdiendo el property-based testing
- *    que sostiene RNF-I-6.
- */
-export interface Evento {
+// rolActor va DENTRO del evento (no se busca en `usuario` al proyectar):
+// corrección histórica —el rol de entonces, no el de hoy (ADR-006)— y pureza
+// del proyector (RNF-I-6).
+export interface EventoBase {
   readonly id: string;
   readonly comandaId: string;
   readonly detalleId?: string;
   readonly sucursalId: string;
-  readonly tipo: TipoEvento;
   readonly actorId: string;
-  /** El rol que tenía el actor AL MOMENTO del evento. Ver arriba. */
   readonly rolActor: Rol;
   readonly dispositivoId: string;
   readonly hlc: Hlc;
-  readonly payload: PayloadEvento;
 }
+
+// `tipo` y `payload.tipo` amarrados por el tipo. Control de seguridad: la
+// autorización mira `tipo`, aplicar() mira `payload.tipo`. Sin amarre, cocina
+// manda tipo:'linea_lista' con payload:'comanda_cobrada' y cobra (T1). El
+// `tipo` aparte existe solo porque la base lo indexa. En el cable lo valida
+// EsquemaEvento (protocolo.ts).
+type EventoDe<P> = P extends PayloadEvento
+  ? EventoBase & { readonly tipo: P['tipo']; readonly payload: P }
+  : never;
+
+export type Evento = EventoDe<PayloadEvento>;
 
 export type PayloadEvento =
   | { readonly tipo: 'comanda_creada'; readonly tipoServicio: TipoServicio; readonly mesaId?: string }

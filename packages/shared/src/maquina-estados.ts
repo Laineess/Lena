@@ -78,38 +78,6 @@ export function esEstadoLineaTerminal(estado: EstadoLinea): boolean {
   return TRANSICIONES_LINEA[estado].length === 0;
 }
 
-// ── La regla de la merma ─────────────────────────────────────
-
-/**
- * ¿Cancelar esta línea registra merma de producto?
- *
- * Toda la regla del negocio cabe en dos condiciones, y la segunda es la
- * interesante:
- *
- * **1. La frontera es el envío a cocina.** Una línea en `borrador` no existió
- *    para nadie. Una ya enviada se está haciendo — en una taquería el pastor
- *    se corta al momento, en segundos, así que "enviada" y "haciéndose" son
- *    lo mismo.
- *
- * **2. Quién cancela codifica lo que esa persona sabe** (RF-F-14):
- *
- *    | Quién                  | ¿Merma? | Qué sabe                          |
- *    |------------------------|---------|-----------------------------------|
- *    | Mesero / Administrador | **Sí**  | El cliente se fue. Se hizo y se tira |
- *    | **Cocinero**           | **No**  | *No pudo* prepararla. Nunca existió  |
- *
- *    Quien sabe si la comida se hizo es el cocinero. Por eso su cancelación es
- *    autoritativa: no hay que preguntarle nada al usuario ni añadir un campo a
- *    la interfaz. El actor ya aporta, con el solo hecho de cancelar, el dato
- *    que únicamente él tiene.
- *
- *    La alternativa —preguntar "¿ya se había preparado?"— pondría la decisión
- *    en quien no lo sabe y añadiría un toque en hora pico.
- *
- * Y tiene una consecuencia de SEGURIDAD que no es obvia: como solo el rol
- * `cocina` puede cancelar sin merma, y ese rol no puede cobrar, **el que cobra
- * no puede ocultar merma**. Separación de funciones aplicada al plato (`07` §4.1).
- */
 export function generaMerma(estadoLinea: EstadoLinea, rolQuienCancela: Rol): boolean {
   if (estadoLinea === 'borrador' || estadoLinea === 'cancelada') return false;
   if (rolQuienCancela === 'cocina') return false;
@@ -120,40 +88,14 @@ export function generaMerma(estadoLinea: EstadoLinea, rolQuienCancela: Rol): boo
 
 export type Resolucion = 'gana_a' | 'gana_b' | 'ambos' | 'conflicto';
 
-/**
- * Qué pasa cuando dos eventos concurrentes tocan la misma comanda.
- *
- * **Hay dos políticas distintas y la diferencia importa:**
- *
- * - **Cancelación → gana siempre** (menos contra `cobrada`). Es irreversible
- *   en el mundo físico: el cliente ya se fue, la comida ya no se vende.
- *   Bloquear la cancelación no cambia esa realidad — solo empuja al mesero a
- *   mentirle al sistema (cobrar y "regalar" el plato), y entonces la merma
- *   desaparece de los datos.
- *
- * - **Modificación → gana el más reciente.** Es un dato editable sin
- *   consecuencia económica.
- *
- * Aplicar last-write-wins a las cancelaciones sería un error grave: una
- * cancelación que llega tarde por sync se perdería, y la comida ya tirada
- * nunca aparecería en la merma.
- */
 export function resolverConflicto(
   tipoA: TipoEvento,
   tipoB: TipoEvento,
 ): Resolucion {
-  // Dos eventos del MISMO tipo no están en conflicto: el plegado es
-  // idempotente y el HLC desempata. Sin esta guarda, resolverConflicto no
-  // sería antisimétrico — lo destapó el property-based testing con el
-  // contraejemplo ('comanda_cobrada', 'comanda_cobrada'), que devolvía
-  // 'gana_a' en ambas direcciones.
   if (tipoA === tipoB) return 'ambos';
 
   const esCancelacion = (t: TipoEvento) =>
     t === 'comanda_cancelada' || t === 'linea_cancelada';
-
-  // 'cobrada' es terminal y el dinero ya entró, posiblemente en un turno ya
-  // cerrado. Revertirlo en automático descuadraría un corte firmado (CU-06 F4).
   if (tipoA === 'comanda_cobrada' && tipoB !== 'comanda_reabierta') return 'gana_a';
   if (tipoB === 'comanda_cobrada' && tipoA !== 'comanda_reabierta') return 'gana_b';
 

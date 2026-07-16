@@ -86,7 +86,7 @@ const arbLog = fc
         hlc: formatearHlc({ fisico: 1_700_000_000_000 + n, logico: 0, nodo: 'A' }),
         payload,
         ...(detalleId !== undefined ? { detalleId } : {}),
-      });
+      } as Evento);
     };
 
     push({
