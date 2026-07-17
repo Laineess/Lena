@@ -1,5 +1,6 @@
 // Turno de caja (RF-H). Abrir/cerrar/consultar. NO es event-sourced: el corte
-// es una tabla normal, no parte del log de comandas. Auth: mesero y admin.
+// es una tabla normal, no parte del log de comandas. Auth: administrador (de su
+// sucursal) o superadmin (indica sucursalId). El mesero YA NO abre/cierra caja.
 import { randomUUID } from 'node:crypto';
 import { and, eq, ne, sql } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
@@ -8,16 +9,17 @@ import { aCentavos, aPesos } from '@lena/shared';
 import { comanda, corteCaja, pago } from '@lena/db';
 import type { Db } from '../db';
 import { requiereRol } from '../auth/middleware';
+import { sucursalScope } from '../admin/scope';
 
 // RF-H-7: umbral de diferencia que exige motivo. $20 (configurable a futuro).
 const UMBRAL_DIFERENCIA = 2000; // centavos
 
-const soloCajero = { preHandler: requiereRol('mesero', 'administrador') };
+const soloCajero = { preHandler: requiereRol('superadmin', 'administrador') };
 
 export function registrarRutasTurno(app: FastifyInstance, db: Db): void {
-  // El turno abierto de la sucursal de la sesión, o null.
+  // El turno abierto de la sucursal (del admin, o la que pida el superadmin).
   app.get('/turno/actual', soloCajero, async (req, reply) => {
-    const sucursalId = req.sesion?.sucursalId;
+    const sucursalId = sucursalScope(req, (req.query as { sucursalId?: string })?.sucursalId);
     if (!sucursalId) return reply.code(400).send({ error: 'sin_sucursal' });
     const [c] = await db
       .select()
@@ -30,9 +32,11 @@ export function registrarRutasTurno(app: FastifyInstance, db: Db): void {
   // RF-H-1: abre el turno con fondo inicial. El índice único parcial garantiza
   // que no haya dos abiertos (RNF-I-4): si ya hay uno, la inserción falla.
   app.post('/turno/abrir', soloCajero, async (req, reply) => {
-    const p = z.object({ fondoInicial: z.number().int().nonnegative() }).safeParse(req.body);
+    const p = z
+      .object({ fondoInicial: z.number().int().nonnegative(), sucursalId: z.string().uuid().optional() })
+      .safeParse(req.body);
     if (!p.success) return reply.code(400).send({ error: 'peticion_invalida' });
-    const sucursalId = req.sesion?.sucursalId;
+    const sucursalId = sucursalScope(req, p.data.sucursalId);
     if (!sucursalId) return reply.code(400).send({ error: 'sin_sucursal' });
     try {
       const [c] = await db
@@ -55,10 +59,14 @@ export function registrarRutasTurno(app: FastifyInstance, db: Db): void {
   // RF-H-4/5/6/8: cierra el turno. Bloquea si hay comandas abiertas.
   app.post('/turno/cerrar', soloCajero, async (req, reply) => {
     const p = z
-      .object({ contadoEfectivo: z.number().int().nonnegative(), motivo: z.string().trim().optional() })
+      .object({
+        contadoEfectivo: z.number().int().nonnegative(),
+        motivo: z.string().trim().optional(),
+        sucursalId: z.string().uuid().optional(),
+      })
       .safeParse(req.body);
     if (!p.success) return reply.code(400).send({ error: 'peticion_invalida' });
-    const sucursalId = req.sesion?.sucursalId;
+    const sucursalId = sucursalScope(req, p.data.sucursalId);
     if (!sucursalId) return reply.code(400).send({ error: 'sin_sucursal' });
 
     const [turno] = await db

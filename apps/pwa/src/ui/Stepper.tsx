@@ -17,7 +17,7 @@ export function Stepper({ cantidad, onCambio, disabled }: Props) {
             aria-label="quitar uno"
             disabled={disabled}
             onClick={() => onCambio(cantidad - 1)}
-            className={`${boton} bg-piedra-100 text-piedra-900 active:bg-piedra-200`}
+            className={`${boton} bg-carbon-800 text-piedra-100 active:bg-carbon-700`}
           >
             −
           </button>
@@ -31,7 +31,7 @@ export function Stepper({ cantidad, onCambio, disabled }: Props) {
         aria-label="agregar uno"
         disabled={disabled}
         onClick={() => onCambio(cantidad + 1)}
-        className={`${boton} bg-brasa-700 text-white active:bg-brasa-800`}
+        className={`${boton} bg-rojo-600 text-white active:bg-rojo-500`}
       >
         +
       </button>

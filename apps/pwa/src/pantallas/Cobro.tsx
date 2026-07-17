@@ -5,6 +5,7 @@ import { useMemo, useState } from 'react';
 import { formatearMoneda } from '@lena/shared';
 import type { Comanda, MetodoPago } from '@lena/shared';
 import { Boton } from '../ui/Boton';
+import { rolEvento } from '../dominio/api';
 import type { DatosSesion } from '../dominio/api';
 import { hlcMaximo } from '../dominio/cocina';
 import { configDispositivo } from '../dominio/dispositivo';
@@ -35,7 +36,7 @@ export function Cobro({ sesion, comanda, motor, onListo }: Props) {
         actorId: sesion.sesion.usuarioId,
         dispositivoId: sesion.sesion.dispositivoId as string,
         nodo: disp.letra,
-        rol: sesion.sesion.rol,
+        rol: rolEvento(sesion.sesion.rol),
       }),
     [sesion, disp.letra],
   );
@@ -76,11 +77,11 @@ export function Cobro({ sesion, comanda, motor, onListo }: Props) {
 
   return (
     <div className="flex h-full flex-col">
-      <header className="flex items-center justify-between border-b border-piedra-200 px-4 py-3">
-        <button type="button" onClick={onListo} className="font-semibold text-piedra-600">
+      <header className="flex items-center justify-between border-b border-carbon-700 px-4 py-3">
+        <button type="button" onClick={onListo} className="font-semibold text-piedra-300">
           ‹ Cobrar
         </button>
-        <span className="text-piedra-500">
+        <span className="text-piedra-400">
           {comanda.tipoServicio === 'mesa'
             ? 'Mesa'
             : comanda.tipoServicio === 'domicilio'
@@ -89,7 +90,7 @@ export function Cobro({ sesion, comanda, motor, onListo }: Props) {
         </span>
       </header>
 
-      <ul className="border-b border-piedra-200 px-4 py-2">
+      <ul className="border-b border-carbon-700 px-4 py-2">
         {comanda.lineas
           .filter((l) => l.estado !== 'cancelada')
           .map((l) => (
@@ -102,7 +103,7 @@ export function Cobro({ sesion, comanda, motor, onListo }: Props) {
           ))}
       </ul>
 
-      <div className="flex items-center justify-between border-b border-piedra-200 px-4 py-2 text-2xl font-bold">
+      <div className="flex items-center justify-between border-b border-carbon-700 px-4 py-2 text-2xl font-bold">
         <span>TOTAL</span>
         <span className="tabular-nums">{formatearMoneda(total)}</span>
       </div>
@@ -110,7 +111,7 @@ export function Cobro({ sesion, comanda, motor, onListo }: Props) {
       <div className="flex-1 overflow-y-auto p-4">
         {/* Pagos ya agregados (pago dividido) */}
         {pagos.map((p, i) => (
-          <div key={i} className="mb-1 flex justify-between text-piedra-600">
+          <div key={i} className="mb-1 flex justify-between text-piedra-300">
             <span className="capitalize">{p.metodo}</span>
             <span className="tabular-nums">{formatearMoneda(p.monto)}</span>
           </div>
@@ -125,7 +126,7 @@ export function Cobro({ sesion, comanda, motor, onListo }: Props) {
                   type="button"
                   onClick={() => setMetodo(m)}
                   className={`tactil rounded-md py-3 text-sm font-semibold capitalize ${
-                    metodo === m ? 'bg-brasa-100 text-brasa-800' : 'bg-piedra-100 text-piedra-600'
+                    metodo === m ? 'bg-carbon-800 text-oro-300' : 'bg-carbon-800 text-piedra-300'
                   }`}
                 >
                   {m === 'efectivo' ? '💵' : m === 'tarjeta' ? '💳' : '📱'} {m}
@@ -135,14 +136,14 @@ export function Cobro({ sesion, comanda, motor, onListo }: Props) {
 
             {metodo === 'efectivo' && (
               <div className="mb-3">
-                <label className="text-label text-piedra-600">Efectivo recibido</label>
+                <label className="text-label text-piedra-300">Efectivo recibido</label>
                 <div className="flex gap-2">
                   <input
                     type="number"
                     inputMode="numeric"
                     value={recibido !== null ? recibido / 100 : ''}
                     onChange={(e) => setRecibido(e.target.value ? Math.round(Number(e.target.value) * 100) : null)}
-                    className="w-32 rounded-md border border-piedra-300 px-3 py-2 text-lg tabular-nums"
+                    className="w-32 rounded-md border border-carbon-600 px-3 py-2 text-lg tabular-nums"
                     placeholder="$"
                   />
                   {ATAJOS.map((a) => (
@@ -150,7 +151,7 @@ export function Cobro({ sesion, comanda, motor, onListo }: Props) {
                       key={a}
                       type="button"
                       onClick={() => setRecibido(a)}
-                      className="tactil rounded-md bg-piedra-100 px-3 font-semibold tabular-nums"
+                      className="tactil rounded-md bg-carbon-800 px-3 font-semibold tabular-nums"
                     >
                       {formatearMoneda(a)}
                     </button>
@@ -177,9 +178,9 @@ export function Cobro({ sesion, comanda, motor, onListo }: Props) {
         )}
       </div>
 
-      <footer className="border-t border-piedra-200 p-3">
+      <footer className="border-t border-carbon-700 p-3">
         <div className="mb-2 flex items-center justify-between px-1">
-          <span className="text-piedra-500">
+          <span className="text-piedra-400">
             Pagado {formatearMoneda(pagado)} de {formatearMoneda(total)}
           </span>
           {pagado === total ? (

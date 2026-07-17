@@ -2,6 +2,16 @@
 // de Vite (dev) o Caddy (prod) las mandan al servidor.
 import type { Rol } from '@lena/shared';
 
+// Rol de la sesión: el del log (eventos) más `superadmin`, que es de gestión,
+// no de comandas. Ver 07 §roles.
+export type RolSesion = Rol | 'superadmin';
+
+// El rol para un evento del log. El superadmin nunca captura/cobra (va al
+// escritorio), pero el tipo lo contempla: si llegara, cuenta como administrador.
+export function rolEvento(r: RolSesion): Rol {
+  return r === 'superadmin' ? 'administrador' : r;
+}
+
 export interface Usuario {
   id: string;
   nombre: string;
@@ -37,7 +47,7 @@ export interface Catalogo {
 export interface DatosSesion {
   acceso: string;
   refresh: string;
-  sesion: { usuarioId: string; rol: Rol; sucursalId: string | null; dispositivoId: string | null };
+  sesion: { usuarioId: string; rol: RolSesion; sucursalId: string | null; dispositivoId: string | null };
 }
 
 async function postJson<T>(ruta: string, cuerpo: unknown, token?: string): Promise<T> {
@@ -59,15 +69,17 @@ export class ErrorApi extends Error {
   }
 }
 
-export function usuariosDeDispositivo(dispositivoId: string, tokenDispositivo: string) {
-  return postJson<{ sucursalId: string; usuarios: Usuario[] }>('/auth/dispositivo/usuarios', {
-    dispositivoId,
-    tokenDispositivo,
+// Paso 1 del ingreso: la clave de la sucursal resuelve a sus usuarios de PIN.
+export function sucursalPorClave(clave: string) {
+  return postJson<{ sucursalId: string; nombre: string; letra: string; usuarios: Usuario[] }>('/auth/sucursal', {
+    clave,
   });
 }
 
-export function loginPin(datos: { dispositivoId: string; tokenDispositivo: string; usuarioId: string; pin: string }) {
-  return postJson<DatosSesion>('/auth/login/pin', datos);
+// Paso 2: usuario + PIN dentro de esa sucursal. Devuelve la sesión y la letra
+// de voceo (A-1/B-3) del dispositivo de la sucursal.
+export function loginPin(datos: { claveSucursal: string; usuarioId: string; pin: string }) {
+  return postJson<DatosSesion & { letra?: string }>('/auth/login/pin', datos);
 }
 
 export function loginAdmin(datos: { email: string; password: string }) {
@@ -186,7 +198,16 @@ export interface MasVendido {
   importe: number;
 }
 
-const q = (desde?: string, hasta?: string) => (desde ? `?desde=${desde}&hasta=${hasta ?? desde}` : '');
+const q = (desde?: string, hasta?: string, sucursalId?: string) => {
+  const p = new URLSearchParams();
+  if (desde) {
+    p.set('desde', desde);
+    p.set('hasta', hasta ?? desde);
+  }
+  if (sucursalId) p.set('sucursalId', sucursalId);
+  const s = p.toString();
+  return s ? `?${s}` : '';
+};
 
 // Descarga un CSV autenticado (el endpoint exige token, un <a href> no basta).
 export async function exportarCsv(token: string, reporte: string, desde: string, hasta: string): Promise<void> {
@@ -233,18 +254,72 @@ async function authSend<T>(metodo: string, ruta: string, token: string, cuerpo?:
   return res.json() as Promise<T>;
 }
 
+export interface Sucursal {
+  id: string;
+  nombre: string;
+  clave: string;
+  direccion: string | null;
+  activo: boolean;
+  umbralAmarillo: number;
+  umbralNaranja: number;
+  umbralRojo: number;
+}
+export interface CajaDia {
+  sucursalId: string;
+  sucursal: string;
+  ventas: number;
+  comandas: number;
+  comandasAbiertas: number;
+  turnoAbierto: boolean;
+  abiertoAt: string | null;
+  fondoInicial: number | null;
+}
+export interface ComandaDia {
+  id: string;
+  folio: number | null;
+  tipoServicio: string;
+  estado: string;
+  total: number;
+  mesa: string | null;
+  mesero: string | null;
+  sucursal: string;
+  abiertaAt: string;
+  cerradaAt: string | null;
+}
+export interface ComandaDetalle {
+  id: string;
+  folio: number | null;
+  tipoServicio: string;
+  estado: string;
+  total: number;
+  mesa: string | null;
+  mesero: string | null;
+  motivoCancelacion: string | null;
+  abiertaAt: string;
+  cerradaAt: string | null;
+  lineas: { nombre: string; cantidad: number; precio: number; estado: string; notas: string | null }[];
+  pagos: { metodo: string; monto: number }[];
+}
+
 export const admin = {
-  resumen: (t: string, d?: string, h?: string) => authGet<Resumen>(`/admin/resumen${q(d, h)}`, t),
-  merma: (t: string, d?: string, h?: string) => authGet<ReporteMerma>(`/admin/merma${q(d, h)}`, t),
-  canceladas: (t: string, d?: string, h?: string) => authGet<Cancelada[]>(`/admin/canceladas${q(d, h)}`, t),
-  masVendidos: (t: string, d?: string, h?: string) => authGet<MasVendido[]>(`/admin/mas-vendidos${q(d, h)}`, t),
-  ventasPorHora: (t: string, d?: string, h?: string) =>
-    authGet<{ hora: number; ventas: number; comandas: number }[]>(`/admin/ventas-por-hora${q(d, h)}`, t),
-  cortes: (t: string, d?: string, h?: string) => authGet<Corte[]>(`/admin/cortes${q(d, h)}`, t),
+  resumen: (t: string, d?: string, h?: string, s?: string) => authGet<Resumen>(`/admin/resumen${q(d, h, s)}`, t),
+  merma: (t: string, d?: string, h?: string, s?: string) => authGet<ReporteMerma>(`/admin/merma${q(d, h, s)}`, t),
+  canceladas: (t: string, d?: string, h?: string, s?: string) =>
+    authGet<Cancelada[]>(`/admin/canceladas${q(d, h, s)}`, t),
+  masVendidos: (t: string, d?: string, h?: string, s?: string) =>
+    authGet<MasVendido[]>(`/admin/mas-vendidos${q(d, h, s)}`, t),
+  ventasPorHora: (t: string, d?: string, h?: string, s?: string) =>
+    authGet<{ hora: number; ventas: number; comandas: number }[]>(`/admin/ventas-por-hora${q(d, h, s)}`, t),
+  cortes: (t: string, d?: string, h?: string, s?: string) => authGet<Corte[]>(`/admin/cortes${q(d, h, s)}`, t),
+  caja: (t: string) => authGet<CajaDia[]>('/admin/caja', t),
+  comandasDia: (t: string) => authGet<ComandaDia[]>('/admin/comandas-dia', t),
+  comandaDetalle: (t: string, id: string) => authGet<ComandaDetalle>(`/admin/comandas/${id}`, t),
   // Gestión (RF-C/D/I-4)
   usuarios: (t: string) => authGet<UsuarioAdmin[]>('/admin/usuarios', t),
-  crearUsuario: (t: string, u: { nombre: string; rol: string; sucursalId: string; pin: string }) =>
+  crearUsuario: (t: string, u: { nombre: string; rol: string; sucursalId?: string; pin: string }) =>
     authSend<{ id: string }>('POST', '/admin/usuarios', t, u),
+  crearAdmin: (t: string, a: { nombre: string; email: string; password: string; sucursalId: string }) =>
+    authSend<{ id: string }>('POST', '/admin/admins', t, a),
   bajaUsuario: (t: string, id: string) =>
     authSend<{ ok: boolean }>('PATCH', `/admin/usuarios/${id}`, t, { activo: false }),
   cambiarPin: (t: string, id: string, pin: string) =>
@@ -252,12 +327,16 @@ export const admin = {
   cambiarPrecio: (t: string, id: string, precio: number) =>
     authSend<{ ok: boolean }>('PATCH', `/admin/productos/${id}/precio`, t, { precio }),
   historialPrecios: (t: string, id: string) => authGet<CambioPrecio[]>(`/admin/productos/${id}/precios`, t),
-  gastos: (t: string, d?: string, h?: string) => authGet<Gasto[]>(`/admin/gastos${q(d, h)}`, t),
+  gastos: (t: string, d?: string, h?: string, s?: string) => authGet<Gasto[]>(`/admin/gastos${q(d, h, s)}`, t),
   crearGasto: (
     t: string,
-    g: { sucursalId: string; categoria: string; concepto: string; monto: number; fecha: string },
+    g: { sucursalId?: string; categoria: string; concepto: string; monto: number; fecha: string },
   ) => authSend<{ id: string }>('POST', '/admin/gastos', t, g),
-  sucursales: (t: string) => authGet<{ id: string; nombre: string }[]>('/admin/sucursales', t),
+  sucursales: (t: string) => authGet<Sucursal[]>('/admin/sucursales', t),
+  crearSucursal: (t: string, s: { nombre: string; direccion?: string }) =>
+    authSend<{ id: string; clave: string }>('POST', '/admin/sucursales', t, s),
+  editarSucursal: (t: string, id: string, s: { nombre?: string; direccion?: string; activo?: boolean }) =>
+    authSend<{ ok: boolean }>('PATCH', `/admin/sucursales/${id}`, t, s),
   dispositivos: (t: string) =>
     authGet<{ id: string; nombre: string; activo: boolean; minutosSinSync: number | null }[]>('/admin/dispositivos', t),
 };

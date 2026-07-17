@@ -7,25 +7,33 @@ import type { Sesion } from '@lena/auth';
 import { ID, owner } from '../sync/fixtures';
 
 export const CRED = {
+  claveSucursal: 'CENTRO',
   pinMesero: '481920',
   pinCocina: '481921',
+  emailSuper: 'super@lena.local',
+  passwordSuper: 'ClaveSuper2026x',
   emailAdmin: 'admin@lena.local',
   passwordAdmin: 'ClaveAdmin2026x',
   tokenTabletA: 'token-de-prueba-tableta-a',
-  adminId: '01930000-0000-7000-8000-000000000010',
+  superadminId: '01930000-0000-7000-8000-000000000009',
+  adminId: '01930000-0000-7000-8000-000000000010', // administrador de Centro
 } as const;
 
 // Deja las credenciales reales en la base. Idempotente.
 export async function sembrarCredenciales(): Promise<void> {
-  const [pinM, pinC, pass] = await Promise.all([
+  const [pinM, pinC, passSuper, passAdmin] = await Promise.all([
     hashSecreto(CRED.pinMesero),
     hashSecreto(CRED.pinCocina),
+    hashSecreto(CRED.passwordSuper),
     hashSecreto(CRED.passwordAdmin),
   ]);
   await owner.db.execute(sql`UPDATE usuario SET pin_hash = ${pinM} WHERE id = ${ID.mesero1}`);
   await owner.db.execute(sql`UPDATE usuario SET pin_hash = ${pinC} WHERE id = ${ID.cocinero}`);
   await owner.db.execute(
-    sql`UPDATE usuario SET password_hash = ${pass}, email = ${CRED.emailAdmin} WHERE id = ${CRED.adminId}`,
+    sql`UPDATE usuario SET password_hash = ${passSuper}, email = ${CRED.emailSuper} WHERE id = ${CRED.superadminId}`,
+  );
+  await owner.db.execute(
+    sql`UPDATE usuario SET password_hash = ${passAdmin}, email = ${CRED.emailAdmin} WHERE id = ${CRED.adminId}`,
   );
   // Dispositivo activo con credencial y sin bloqueos previos.
   await owner.db.execute(
@@ -50,7 +58,12 @@ export function sesionMesero(): Sesion {
   return { usuarioId: ID.mesero1, rol: 'mesero', sucursalId: ID.sucursal, dispositivoId: ID.tabletA };
 }
 
-// El admin: alcance global (sucursalId null), sin dispositivo (RF-C-4).
+// El administrador: gerente de UNA sucursal (Centro), sin dispositivo.
 export function sesionAdmin(): Sesion {
-  return { usuarioId: CRED.adminId, rol: 'administrador', sucursalId: null, dispositivoId: null };
+  return { usuarioId: CRED.adminId, rol: 'administrador', sucursalId: ID.sucursal, dispositivoId: null };
+}
+
+// El superadmin: alcance global (sucursalId null), sin dispositivo (RF-C-4).
+export function sesionSuperadmin(): Sesion {
+  return { usuarioId: CRED.superadminId, rol: 'superadmin', sucursalId: null, dispositivoId: null };
 }

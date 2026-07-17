@@ -10,13 +10,12 @@ import {
   refrescar,
   registrarDispositivo,
   revocarDispositivo,
-  usuariosDeDispositivo,
+  sucursalPorClave,
 } from './servicio';
 
 const EsqAdmin = z.object({ email: z.string().email(), password: z.string().min(1) });
 const EsqPin = z.object({
-  dispositivoId: z.string().uuid(),
-  tokenDispositivo: z.string().min(1),
+  claveSucursal: z.string().min(1),
   usuarioId: z.string().uuid(),
   pin: z.string().min(1),
 });
@@ -56,23 +55,24 @@ export function registrarRutasAuth(app: FastifyInstance, db: Db, limiteAuth = 10
     return { acceso: r.acceso, refresh: r.refresh, sesion: r.sesion };
   });
 
-  // Lista de usuarios del dispositivo para la pantalla de PIN (RS-A-3).
-  const EsqDispUsuarios = z.object({ dispositivoId: z.string().uuid(), tokenDispositivo: z.string().min(1) });
-  app.post('/auth/dispositivo/usuarios', limite, async (req, reply) => {
-    const p = EsqDispUsuarios.safeParse(req.body);
+  // Paso 1 del ingreso: la clave de la sucursal resuelve a sus usuarios de PIN.
+  const EsqSucursal = z.object({ clave: z.string().min(1) });
+  app.post('/auth/sucursal', limite, async (req, reply) => {
+    const p = EsqSucursal.safeParse(req.body);
     if (!p.success) return reply.code(400).send({ error: 'peticion_invalida' });
-    const r = await usuariosDeDispositivo(db, p.data.dispositivoId, p.data.tokenDispositivo);
-    if (!r.ok) return reply.code(401).send({ error: 'dispositivo no autorizado' });
-    return { sucursalId: r.sucursalId, usuarios: r.usuarios };
+    const r = await sucursalPorClave(db, p.data.clave);
+    if (!r.ok) return reply.code(401).send({ error: 'clave de sucursal inválida' });
+    return { sucursalId: r.sucursalId, nombre: r.nombre, letra: r.letra, usuarios: r.usuarios };
   });
 
+  // Paso 2: usuario + PIN dentro de esa sucursal.
   app.post('/auth/login/pin', limite, async (req, reply) => {
     const p = EsqPin.safeParse(req.body);
     if (!p.success) return reply.code(400).send({ error: 'peticion_invalida' });
     const r = await loginPin(db, { ...p.data, ip: req.ip });
     if (!r.ok) return reply.code(401).send({ error: r.motivo, bloqueadoHasta: r.bloqueadoHasta });
     reply.header('set-cookie', cookieRefresh(r.refresh));
-    return { acceso: r.acceso, refresh: r.refresh, sesion: r.sesion };
+    return { acceso: r.acceso, refresh: r.refresh, sesion: r.sesion, letra: r.letra };
   });
 
   app.post('/auth/refresh', async (req, reply) => {

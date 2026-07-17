@@ -1,19 +1,46 @@
-// Gestión del administrador: catálogo (RF-D), usuarios (RF-C), sucursales (RF-B).
-// Todo requiere rol administrador. Las bajas son LÓGICAS (activo=false): el
-// historial que referencia a lo dado de baja permanece intacto (RF-C-3, RF-D-5).
+// Gestión: catálogo (RF-D), usuarios (RF-C), sucursales (RF-B).
+// Dos niveles (07 §roles): `soloSuper` (superadmin) para dar de alta sucursales
+// y administradores; `soloAdmin` (superadmin o administrador) para el resto,
+// donde el administrador queda acotado a SU sucursal (sucursalScope).
+// Las bajas son LÓGICAS (activo=false): el historial permanece intacto.
 import { randomUUID } from 'node:crypto';
 import { and, eq } from 'drizzle-orm';
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import { hashSecreto, validarPin } from '@lena/auth';
+import { hashSecreto, validarPassword, validarPin } from '@lena/auth';
 import { EsquemaEvento, aPesos, formatearHlc } from '@lena/shared';
 import { categoria, comanda, dispositivo, producto, productoPrecioHistorial, sucursal, usuario } from '@lena/db';
 import type { Db } from '../db';
 import { requiereRol } from '../auth/middleware';
+import { esSuperadmin, sucursalScope } from './scope';
 import { procesarPush } from '../sync/push';
 
-const soloAdmin = { preHandler: requiereRol('administrador') };
+const soloAdmin = { preHandler: requiereRol('superadmin', 'administrador') };
+const soloSuper = { preHandler: requiereRol('superadmin') };
 const centavos = z.number().int().nonnegative();
+
+// Clave de sucursal: slug del nombre + sufijo aleatorio si choca. Mayúsculas,
+// sin acentos ni espacios. Es lo que el mesero escribe para entrar (RF-B).
+function slugSucursal(nombre: string): string {
+  // NFD separa el acento de la letra; el filtro alfanumérico se lleva el acento
+  // y deja la base ("é" → "e"). Sin NFD, "é" caería entera.
+  const s = nombre
+    .normalize('NFD')
+    .replace(/[^a-zA-Z0-9]/g, '')
+    .toUpperCase()
+    .slice(0, 8);
+  return s || 'SUC';
+}
+
+async function generarClave(db: Db, nombre: string): Promise<string> {
+  const base = slugSucursal(nombre);
+  for (let i = 0; i < 12; i++) {
+    const cand = i === 0 ? base : `${base}-${randomUUID().replace(/-/g, '').slice(0, 4).toUpperCase()}`;
+    const [ex] = await db.select({ id: sucursal.id }).from(sucursal).where(eq(sucursal.clave, cand)).limit(1);
+    if (!ex) return cand;
+  }
+  return `${base}-${randomUUID().replace(/-/g, '').slice(0, 8).toUpperCase()}`;
+}
 
 export function registrarRutasGestion(app: FastifyInstance, db: Db): void {
   // ── Productos (RF-D-1/2/5) ──
@@ -124,7 +151,9 @@ export function registrarRutasGestion(app: FastifyInstance, db: Db): void {
   });
 
   // ── Usuarios (RF-C-1/2/3) ──
-  app.get('/admin/usuarios', soloAdmin, async () => {
+  // El administrador ve solo los de su sucursal; el superadmin, todos.
+  app.get('/admin/usuarios', soloAdmin, async (req) => {
+    const suc = sucursalScope(req);
     return db
       .select({
         id: usuario.id,
@@ -133,19 +162,24 @@ export function registrarRutasGestion(app: FastifyInstance, db: Db): void {
         sucursalId: usuario.sucursalId,
         activo: usuario.activo,
       })
-      .from(usuario);
+      .from(usuario)
+      .where(suc ? eq(usuario.sucursalId, suc) : undefined);
   });
 
+  // Crea mesero/cocina (PIN). El administrador solo en SU sucursal; el
+  // superadmin en cualquiera. Para dar de alta administradores → POST /admin/admins.
   app.post('/admin/usuarios', soloAdmin, async (req, reply) => {
     const p = z
       .object({
         nombre: z.string().trim().min(1),
-        rol: z.enum(['mesero', 'cocina']), // el admin no crea otros admin por aquí
-        sucursalId: z.string().uuid(),
+        rol: z.enum(['mesero', 'cocina']),
+        sucursalId: z.string().uuid().optional(),
         pin: z.string(),
       })
       .safeParse(req.body);
     if (!p.success) return reply.code(400).send({ error: 'peticion_invalida' });
+    const sucursalId = sucursalScope(req, p.data.sucursalId);
+    if (!sucursalId) return reply.code(400).send({ error: 'sucursal_requerida' });
     const val = validarPin(p.data.pin);
     if (!val.ok) return reply.code(400).send({ error: 'pin_invalido', detalle: val.motivo });
     const [u] = await db
@@ -154,18 +188,53 @@ export function registrarRutasGestion(app: FastifyInstance, db: Db): void {
         id: randomUUID(),
         nombre: p.data.nombre,
         rol: p.data.rol,
-        sucursalId: p.data.sucursalId,
+        sucursalId,
         pinHash: await hashSecreto(p.data.pin),
       })
       .returning({ id: usuario.id });
     return { id: u?.id };
   });
 
+  // Alta de administrador de sucursal (email+contraseña). SOLO superadmin.
+  app.post('/admin/admins', soloSuper, async (req, reply) => {
+    const p = z
+      .object({
+        nombre: z.string().trim().min(1),
+        email: z.string().email(),
+        password: z.string(),
+        sucursalId: z.string().uuid(),
+      })
+      .safeParse(req.body);
+    if (!p.success) return reply.code(400).send({ error: 'peticion_invalida' });
+    const val = validarPassword(p.data.password);
+    if (!val.ok) return reply.code(400).send({ error: 'password_invalida', detalle: val.motivo });
+    const [u] = await db
+      .insert(usuario)
+      .values({
+        id: randomUUID(),
+        nombre: p.data.nombre,
+        rol: 'administrador',
+        sucursalId: p.data.sucursalId,
+        email: p.data.email,
+        passwordHash: await hashSecreto(p.data.password),
+      })
+      .returning({ id: usuario.id });
+    return { id: u?.id };
+  });
+
+  // Un administrador solo toca usuarios de su sucursal (403 si no).
+  async function fueraDeScope(req: FastifyRequest, id: string): Promise<boolean> {
+    if (esSuperadmin(req)) return false;
+    const [u] = await db.select({ suc: usuario.sucursalId }).from(usuario).where(eq(usuario.id, id)).limit(1);
+    return !u || u.suc !== req.sesion?.sucursalId;
+  }
+
   app.patch<{ Params: { id: string } }>('/admin/usuarios/:id', soloAdmin, async (req, reply) => {
     const p = z
       .object({ nombre: z.string().trim().min(1).optional(), activo: z.boolean().optional() })
       .safeParse(req.body);
     if (!p.success) return reply.code(400).send({ error: 'peticion_invalida' });
+    if (await fueraDeScope(req, req.params.id)) return reply.code(403).send({ error: 'sucursal_ajena' });
     await db
       .update(usuario)
       .set({ ...p.data, updatedAt: new Date() })
@@ -179,6 +248,7 @@ export function registrarRutasGestion(app: FastifyInstance, db: Db): void {
     if (!p.success) return reply.code(400).send({ error: 'peticion_invalida' });
     const val = validarPin(p.data.pin);
     if (!val.ok) return reply.code(400).send({ error: 'pin_invalido', detalle: val.motivo });
+    if (await fueraDeScope(req, req.params.id)) return reply.code(403).send({ error: 'sucursal_ajena' });
     await db
       .update(usuario)
       .set({ pinHash: await hashSecreto(p.data.pin), updatedAt: new Date() })
@@ -187,23 +257,27 @@ export function registrarRutasGestion(app: FastifyInstance, db: Db): void {
   });
 
   // ── Sucursales (RF-B-1/2/3/4) ──
-  app.get('/admin/sucursales', soloAdmin, async () => {
-    return db.select().from(sucursal);
+  // El administrador ve solo la suya; el superadmin, todas. Crear/editar
+  // sucursales es exclusivo del superadmin.
+  app.get('/admin/sucursales', soloAdmin, async (req) => {
+    const suc = sucursalScope(req);
+    return db.select().from(sucursal).where(suc ? eq(sucursal.id, suc) : undefined);
   });
 
-  app.post('/admin/sucursales', soloAdmin, async (req, reply) => {
+  app.post('/admin/sucursales', soloSuper, async (req, reply) => {
     const p = z
       .object({ nombre: z.string().trim().min(1), direccion: z.string().trim().optional() })
       .safeParse(req.body);
     if (!p.success) return reply.code(400).send({ error: 'peticion_invalida' });
+    const clave = await generarClave(db, p.data.nombre);
     const [s] = await db
       .insert(sucursal)
-      .values({ id: randomUUID(), nombre: p.data.nombre, direccion: p.data.direccion ?? null })
-      .returning({ id: sucursal.id });
-    return { id: s?.id };
+      .values({ id: randomUUID(), nombre: p.data.nombre, clave, direccion: p.data.direccion ?? null })
+      .returning({ id: sucursal.id, clave: sucursal.clave });
+    return { id: s?.id, clave: s?.clave };
   });
 
-  app.patch<{ Params: { id: string } }>('/admin/sucursales/:id', soloAdmin, async (req, reply) => {
+  app.patch<{ Params: { id: string } }>('/admin/sucursales/:id', soloSuper, async (req, reply) => {
     const p = z
       .object({
         nombre: z.string().trim().min(1).optional(),
@@ -231,6 +305,9 @@ export function registrarRutasGestion(app: FastifyInstance, db: Db): void {
       .where(eq(comanda.id, req.params.id))
       .limit(1);
     if (!c) return reply.code(404).send({ error: 'no_encontrada' });
+    if (!esSuperadmin(req) && req.sesion?.sucursalId !== c.sucursalId) {
+      return reply.code(403).send({ error: 'sucursal_ajena' });
+    }
     if (c.estado !== 'cobrada') return reply.code(409).send({ error: 'no_esta_cobrada' });
     // El admin no tiene dispositivo propio; se usa uno activo de la sucursal
     // para la procedencia. El autor real es el admin (actor_id, rol_actor).

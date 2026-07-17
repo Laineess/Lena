@@ -10,17 +10,19 @@ import {
   verificarSecreto,
   tokenCoincide,
 } from '@lena/auth';
-import { dispositivo, intentoAuth, sesion as sesionTbl, usuario } from '@lena/db';
+import { randomUUID } from 'node:crypto';
+import { dispositivo, intentoAuth, sesion as sesionTbl, sucursal, usuario } from '@lena/db';
 import type { Db } from '../db';
 
 const TTL_REFRESH_MS: Record<Sesion['rol'], number> = {
-  administrador: 30 * 60_000, // inactividad 30 min (RS-A-7)
+  superadmin: 30 * 60_000, // inactividad 30 min (RS-A-7)
+  administrador: 30 * 60_000,
   mesero: 30 * 24 * 3_600_000, // sesión persistente en dispositivo (RS-A-8)
   cocina: 30 * 24 * 3_600_000,
 };
 
 export type Resultado =
-  | { ok: true; acceso: string; refresh: string; sesion: Sesion }
+  | { ok: true; acceso: string; refresh: string; sesion: Sesion; letra?: string }
   | { ok: false; motivo: string; bloqueadoHasta?: number };
 
 function secreto(): string {
@@ -80,68 +82,130 @@ async function emitirSesion(db: Db, s: Sesion, familia?: string): Promise<{ acce
   return { acceso, refresh };
 }
 
-// ── Login de administrador (email + contraseña) ──────────────
+// ── Login por email + contraseña (superadmin y administrador) ──
 
 export async function loginAdmin(db: Db, datos: { email: string; password: string; ip?: string }): Promise<Resultado> {
-  const [u] = await db
-    .select()
-    .from(usuario)
-    .where(and(eq(usuario.email, datos.email), eq(usuario.rol, 'administrador'), eq(usuario.activo, true)))
-    .limit(1);
+  const [u] = await db.select().from(usuario).where(and(eq(usuario.email, datos.email), eq(usuario.activo, true))).limit(1);
 
-  if (!u?.passwordHash || !(await verificarSecreto(u.passwordHash, datos.password))) {
+  // Solo superadmin/administrador entran por email. El rol y la sucursal salen
+  // del servidor (RS-Z-2): el superadmin es global (sucursalId null), el
+  // administrador queda anclado a la suya.
+  const esEmail = u?.rol === 'superadmin' || u?.rol === 'administrador';
+  if (!u || !esEmail || !u.passwordHash || !(await verificarSecreto(u.passwordHash, datos.password))) {
     await registrarIntento(db, { usuarioId: u?.id, exito: false, ip: datos.ip, motivo: 'credenciales' });
     return { ok: false, motivo: 'credenciales inválidas' };
   }
 
-  const s: Sesion = { usuarioId: u.id, rol: 'administrador', sucursalId: null, dispositivoId: null };
+  const s: Sesion = { usuarioId: u.id, rol: u.rol, sucursalId: u.sucursalId ?? null, dispositivoId: null };
   const { acceso, refresh } = await emitirSesion(db, s);
   await registrarIntento(db, { usuarioId: u.id, exito: true, ip: datos.ip });
   return { ok: true, acceso, refresh, sesion: s };
 }
 
-// ── Login de mesero/cocina (dispositivo + PIN) ───────────────
+// ── Sucursal por clave (RF-B) ────────────────────────────────
+// El mesero/cocina entra escribiendo la clave de su sucursal (reemplaza al token
+// de dispositivo). Devuelve la sucursal, su dispositivo por defecto (para el
+// voceo A-1/B-3 y la procedencia de los eventos) y sus usuarios de PIN.
+export async function sucursalPorClave(
+  db: Db,
+  clave: string,
+): Promise<
+  | { ok: true; sucursalId: string; nombre: string; letra: string; usuarios: { id: string; nombre: string; rol: string }[] }
+  | { ok: false }
+> {
+  const [suc] = await db
+    .select()
+    .from(sucursal)
+    .where(and(eq(sucursal.clave, clave.trim().toUpperCase()), eq(sucursal.activo, true)))
+    .limit(1);
+  if (!suc) return { ok: false };
+  const disp = await dispositivoPredeterminado(db, suc.id);
+  const filas = await db
+    .select({ id: usuario.id, nombre: usuario.nombre, rol: usuario.rol })
+    .from(usuario)
+    .where(and(eq(usuario.sucursalId, suc.id), eq(usuario.activo, true)));
+  return {
+    ok: true,
+    sucursalId: suc.id,
+    nombre: suc.nombre,
+    letra: disp.letra,
+    usuarios: filas.filter((u) => u.rol === 'mesero' || u.rol === 'cocina'),
+  };
+}
+
+// Un dispositivo activo de la sucursal para la procedencia de los eventos y el
+// voceo. Si la sucursal no tiene ninguno (recién creada), crea uno "Principal".
+async function dispositivoPredeterminado(db: Db, sucursalId: string): Promise<{ id: string; letra: string }> {
+  const [activo] = await db
+    .select({ id: dispositivo.id, letra: dispositivo.letra })
+    .from(dispositivo)
+    .where(and(eq(dispositivo.sucursalId, sucursalId), eq(dispositivo.activo, true)))
+    .orderBy(dispositivo.letra)
+    .limit(1);
+  if (activo) return activo;
+  // Sin activos: reactiva uno inactivo (evita chocar con el índice único de
+  // letra por sucursal); si no hay ninguno, crea el "Principal".
+  const [inactivo] = await db
+    .select({ id: dispositivo.id, letra: dispositivo.letra })
+    .from(dispositivo)
+    .where(eq(dispositivo.sucursalId, sucursalId))
+    .orderBy(dispositivo.letra)
+    .limit(1);
+  if (inactivo) {
+    await db.update(dispositivo).set({ activo: true }).where(eq(dispositivo.id, inactivo.id));
+    return inactivo;
+  }
+  const [nd] = await db
+    .insert(dispositivo)
+    .values({ id: randomUUID(), sucursalId, nombre: 'Principal', letra: 'A', activo: true })
+    .returning({ id: dispositivo.id, letra: dispositivo.letra });
+  return nd as { id: string; letra: string };
+}
+
+// ── Login de mesero/cocina (clave de sucursal + PIN) ──────────
 
 export async function loginPin(
   db: Db,
-  datos: { dispositivoId: string; tokenDispositivo: string; usuarioId: string; pin: string; ip?: string },
+  datos: { claveSucursal: string; usuarioId: string; pin: string; ip?: string },
 ): Promise<Resultado> {
-  const [disp] = await db.select().from(dispositivo).where(eq(dispositivo.id, datos.dispositivoId)).limit(1);
+  const [suc] = await db
+    .select()
+    .from(sucursal)
+    .where(and(eq(sucursal.clave, datos.claveSucursal.trim().toUpperCase()), eq(sucursal.activo, true)))
+    .limit(1);
 
-  // RS-A-3: solo desde un dispositivo registrado y activo, con su credencial.
-  if (!disp || !disp.activo || !disp.tokenHash || !tokenCoincide(datos.tokenDispositivo, disp.tokenHash)) {
-    await registrarIntento(db, {
-      dispositivoId: datos.dispositivoId,
-      exito: false,
-      motivo: 'dispositivo',
-      ip: datos.ip,
-    });
-    return { ok: false, motivo: 'dispositivo no autorizado' };
+  // RS-A-3: la clave de la sucursal autoriza el "lugar".
+  if (!suc) {
+    await registrarIntento(db, { exito: false, motivo: 'sucursal', ip: datos.ip });
+    return { ok: false, motivo: 'clave de sucursal inválida' };
   }
+  const disp = await dispositivoPredeterminado(db, suc.id);
 
-  // RS-A-4: bloqueo por intentos fallidos en este dispositivo.
+  // RS-A-4: bloqueo por intentos fallidos en esta sucursal (su dispositivo).
   const hasta = bloqueadoHasta(await fallosRecientes(db, disp.id));
   if (hasta !== null) {
     await registrarIntento(db, { dispositivoId: disp.id, exito: false, motivo: 'bloqueado', ip: datos.ip });
-    return { ok: false, motivo: 'dispositivo bloqueado por intentos fallidos', bloqueadoHasta: hasta };
+    return { ok: false, motivo: 'sucursal bloqueada por intentos fallidos', bloqueadoHasta: hasta };
   }
 
   const [u] = await db
     .select()
     .from(usuario)
-    .where(and(eq(usuario.id, datos.usuarioId), eq(usuario.sucursalId, disp.sucursalId), eq(usuario.activo, true)))
+    .where(and(eq(usuario.id, datos.usuarioId), eq(usuario.sucursalId, suc.id), eq(usuario.activo, true)))
     .limit(1);
 
-  // RS-Z-2: el rol y la sucursal salen del servidor, no del cliente.
-  if (!u || u.rol === 'administrador' || !u.pinHash || !(await verificarSecreto(u.pinHash, datos.pin))) {
+  // RS-Z-2: el rol y la sucursal salen del servidor, no del cliente. Solo
+  // mesero/cocina entran por PIN; superadmin/administrador van por email.
+  const esPin = u?.rol === 'mesero' || u?.rol === 'cocina';
+  if (!u || !esPin || !u.pinHash || !(await verificarSecreto(u.pinHash, datos.pin))) {
     await registrarIntento(db, { dispositivoId: disp.id, usuarioId: u?.id, exito: false, motivo: 'pin', ip: datos.ip });
     return { ok: false, motivo: 'PIN inválido' };
   }
 
-  const s: Sesion = { usuarioId: u.id, rol: u.rol, sucursalId: disp.sucursalId, dispositivoId: disp.id };
+  const s: Sesion = { usuarioId: u.id, rol: u.rol, sucursalId: suc.id, dispositivoId: disp.id };
   const { acceso, refresh } = await emitirSesion(db, s);
   await registrarIntento(db, { dispositivoId: disp.id, usuarioId: u.id, exito: true, ip: datos.ip });
-  return { ok: true, acceso, refresh, sesion: s };
+  return { ok: true, acceso, refresh, sesion: s, letra: disp.letra };
 }
 
 // ── Refresh rotatorio con detección de reuso (RS-A-12) ───────
@@ -234,7 +298,7 @@ export async function usuariosDeDispositivo(
   return {
     ok: true,
     sucursalId: disp.sucursalId,
-    usuarios: filas.filter((u) => u.rol !== 'administrador'),
+    usuarios: filas.filter((u) => u.rol === 'mesero' || u.rol === 'cocina'),
   };
 }
 

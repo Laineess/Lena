@@ -35,8 +35,27 @@
   --color-error: #b91c1c;
   --color-info: #1d4ed8;
 
-  /* Tipografía: Inter, con tabulares obligatorias en cifras (09 §2.4) */
-  --font-sans: 'Inter var', 'Inter', system-ui, sans-serif;
+  /* Tema del escritorio de gestión (09 §7): negro primario, rojo secundario,
+     dorado para detalles. Solo lo usa AdminEscritorio; el POS sigue claro. */
+  --color-carbon-950: #0a0a0b;
+  --color-carbon-900: #121214;
+  --color-carbon-850: #17171a;
+  --color-carbon-800: #1e1e22;
+  --color-carbon-700: #2a2a30;
+  --color-carbon-600: #3a3a42;
+  --color-carbon-500: #52525b;
+  --color-rojo-400: #f26d6d;
+  --color-rojo-500: #e5484d;
+  --color-rojo-600: #d1373c;
+  --color-rojo-700: #b0282d;
+  --color-oro-300: #ecd28a;
+  --color-oro-400: #d9b44a;
+  --color-oro-500: #c69a2e;
+  --color-oro-600: #a67d1f;
+
+  /* Tipografía: Arial en todo el sistema (petición del negocio). Las negritas
+     resaltan lo importante; las cifras van con tabulares (09 §2.4). */
+  --font-sans: Arial, 'Helvetica Neue', Helvetica, sans-serif;
 
   /* Escala de texto (09 §2.4) */
   --text-display: 2.5rem; /* 40px — total a cobrar */
@@ -62,8 +81,10 @@ body,
 body {
   margin: 0;
   font-family: var(--font-sans);
-  background: var(--color-piedra-50);
-  color: var(--color-piedra-900);
+  /* Tema oscuro (negro/rojo/dorado) en todo el sistema menos cocina, que fija
+     su propio fondo. El POS y la gestión heredan este fondo. */
+  background: var(--color-carbon-950);
+  color: var(--color-piedra-100);
   /* Cifras alineadas en toda la app: precios, totales, folios (09 §2.4). */
   font-variant-numeric: tabular-nums;
   -webkit-tap-highlight-color: transparent;

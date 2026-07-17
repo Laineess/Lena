@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { eq, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { pago } from '@lena/db';
-import { sembrarCredenciales, sesionMesero, tokenAcceso } from '../auth/fixtures-auth';
+import { sembrarCredenciales, sesionAdmin, tokenAcceso } from '../auth/fixtures-auth';
 import { construirServidor } from '../servidor';
 import type { Servidor } from '../servidor';
 import { app, cerrarConexiones, dispositivo, ID, limpiar, owner } from '../sync/fixtures';
@@ -20,7 +20,8 @@ async function post(url: string, payload: object) {
 beforeAll(async () => {
   srv = await construirServidor(undefined, { limiteGlobal: 100_000, limiteAuth: 100_000 });
   await sembrarCredenciales();
-  auth = { authorization: `Bearer ${await tokenAcceso(sesionMesero())}` };
+  // El turno lo maneja el administrador (de su sucursal), ya no el mesero.
+  auth = { authorization: `Bearer ${await tokenAcceso(sesionAdmin())}` };
 });
 
 beforeEach(async () => {

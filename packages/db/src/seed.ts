@@ -26,8 +26,11 @@ const db = crearDb(url);
 
 // UUIDs fijos: el seed es idempotente y los tests pueden referenciarlos.
 const ID = {
-  sucursal: '01930000-0000-7000-8000-000000000001',
-  admin: '01930000-0000-7000-8000-000000000010',
+  sucursal: '01930000-0000-7000-8000-000000000001', // Centro
+  sucursalNorte: '01930000-0000-7000-8000-000000000002',
+  superadmin: '01930000-0000-7000-8000-000000000009',
+  admin: '01930000-0000-7000-8000-000000000010', // administrador de Centro
+  adminNorte: '01930000-0000-7000-8000-000000000014',
   mesero1: '01930000-0000-7000-8000-000000000011',
   mesero2: '01930000-0000-7000-8000-000000000012',
   cocinero: '01930000-0000-7000-8000-000000000013',
@@ -45,22 +48,37 @@ console.log('Sembrando…');
 
 await db
   .insert(sucursal)
-  .values({
-    id: ID.sucursal,
-    nombre: 'Centro',
-    direccion: 'Av. Juárez 100, Pachuca, Hgo.',
-  })
+  .values([
+    { id: ID.sucursal, nombre: 'Centro', clave: 'CENTRO', direccion: 'Av. Juárez 100, Pachuca, Hgo.' },
+    { id: ID.sucursalNorte, nombre: 'Norte', clave: 'NORTE', direccion: 'Blvd. Everardo Márquez 45, Pachuca, Hgo.' },
+  ])
   .onConflictDoNothing();
 
 await db
   .insert(usuario)
   .values([
     {
-      id: ID.admin,
-      sucursalId: null, // Alcance global (RF-C-4)
+      id: ID.superadmin,
+      sucursalId: null, // Alcance global (RF-C-4): el dueño
       nombre: 'Carlos González',
+      rol: 'superadmin',
+      email: 'super@lena.local',
+      passwordHash: 'DEV_PLACEHOLDER_argon2id',
+    },
+    {
+      id: ID.admin,
+      sucursalId: ID.sucursal, // Gerente de Centro
+      nombre: 'Gerente Centro',
       rol: 'administrador',
       email: 'admin@lena.local',
+      passwordHash: 'DEV_PLACEHOLDER_argon2id',
+    },
+    {
+      id: ID.adminNorte,
+      sucursalId: ID.sucursalNorte, // Gerente de Norte
+      nombre: 'Gerente Norte',
+      rol: 'administrador',
+      email: 'norte@lena.local',
       passwordHash: 'DEV_PLACEHOLDER_argon2id',
     },
     { id: ID.mesero1, sucursalId: ID.sucursal, nombre: 'Ana', rol: 'mesero', pinHash: 'DEV_PIN_111111' },
@@ -118,8 +136,8 @@ await db
   ])
   .onConflictDoNothing();
 
-console.log('✓ Listo: 1 sucursal · 4 usuarios · 3 dispositivos · 8 mesas · 11 productos');
-console.log('  Admin: admin@lena.local');
+console.log('✓ Listo: 2 sucursales · 6 usuarios · 3 dispositivos · 8 mesas · 11 productos');
+console.log('  Superadmin: super@lena.local · Admin Centro: admin@lena.local · Admin Norte: norte@lena.local');
 console.log('  PIN de desarrollo: Ana 111111 · Luis 222222 · Miguel 333333');
 
 process.exit(0);

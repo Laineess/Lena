@@ -3,7 +3,9 @@
 Sistema de comandas y gestión para restaurantes pequeños.
 Web responsiva, **offline-first**, multi-sucursal.
 
-> **Estado:** Fase 0 — cimientos. El esquema de datos está completo; el API y la PWA aún no existen.
+> **Estado:** MVP funcional (fases 0–9). API (Fastify + sync offline), PWA (mesero/cocina/gestión) y base completos y probados. Falta piloto en tablet física (fase 9.2) y la Fase 2 del producto (insumos/compra sugerida).
+>
+> **Roles:** **superadmin** (dueño, global: crea sucursales y administradores) · **administrador** (gerente de una sucursal: reportes, caja/turno, usuarios, gastos) · **mesero** · **cocina**. Ver [`Docs/07` §4.1](./Docs/7.-Requisitos%20de%20seguridad.md).
 
 ## Documentación
 
@@ -35,17 +37,27 @@ Web responsiva, **offline-first**, multi-sucursal.
 
 ```bash
 pnpm install
-cp .env.example .env          # ajusta las contraseñas
-pnpm db:up                    # levanta Postgres en Docker
-pnpm db:migrate               # crea el esquema
-pnpm db:seed                  # datos de prueba
+cp .env.example .env                 # en Windows PowerShell: copy .env.example .env
+pnpm db:up                           # levanta Postgres en Docker (puerto 5434)
+pnpm db:migrate                      # crea el esquema
+pnpm db:seed                         # 2 sucursales + datos de prueba
+pnpm --filter @lena/api seed:auth    # credenciales dev con hashes reales
+
+pnpm --filter @lena/api dev          # API en :3000  (deja esta terminal)
+pnpm --filter @lena/pwa dev          # PWA en :5173  (otra terminal)
 ```
 
-Comprobar:
+Abre **http://127.0.0.1:5173**. Guía completa (demo, LAN, producción): [`Docs/13`](./Docs/13.-Guia%20de%20ejecucion%20local%20y%20demo.md).
 
-```bash
-pnpm db:studio                # explorador de la base
-```
+### Cómo entrar (dev)
+
+| Quién | Cómo | Credenciales |
+|---|---|---|
+| **Mesero / Cocina** | Clave de sucursal → usuario → PIN | Clave **CENTRO** · Ana **481920** · Luis **481922** · Miguel (cocina) **481921** |
+| **Dueño** (superadmin) | "Soy dueño o administrador" | **super@lena.local** / **ClaveSuper2026x** |
+| **Administrador** (Centro) | idem | **admin@lena.local** / **ClaveAdmin2026x** |
+
+El **turno de caja** lo abre/cierra el administrador (en *Inicio*), no el mesero. La **clave de sucursal** se ve en el panel de gestión y se genera al dar de alta una sucursal.
 
 ## Comandos
 
@@ -67,8 +79,8 @@ lena/
 │   ├── db/         Esquema Drizzle + migraciones
 │   └── shared/     (fase 1) Proyector de estado, HLC, tipos
 └── apps/
-    ├── api/        (fase 2) Fastify + WebSocket
-    └── web/        (fase 4) PWA React
+    ├── api/        Fastify + WebSocket + sync + auth + gestión
+    └── pwa/        PWA React (mesero, cocina, escritorio de gestión)
 ```
 
 `packages/shared` va a contener la lógica que **no puede divergir** entre cliente y servidor: las transiciones de estado y el cálculo de totales. Si el cliente y el servidor no concuerdan en si una transición es legal, el sync produce estados imposibles.

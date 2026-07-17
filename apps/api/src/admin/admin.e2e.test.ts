@@ -1,14 +1,19 @@
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { sembrarCredenciales, sesionAdmin, sesionMesero, tokenAcceso } from '../auth/fixtures-auth';
+import { sembrarCredenciales, sesionAdmin, sesionMesero, sesionSuperadmin, tokenAcceso } from '../auth/fixtures-auth';
 import { construirServidor } from '../servidor';
 import type { Servidor } from '../servidor';
 import { app, cerrarConexiones, dispositivo, ID, limpiar, owner } from '../sync/fixtures';
 import { procesarPush } from '../sync/push';
 
+const SUCURSAL_NORTE = '01930000-0000-7000-8000-000000000002';
+const ADMIN_NORTE = '01930000-0000-7000-8000-000000000014';
+
 const uuid = () => randomUUID();
 let srv: Servidor;
 let admin: { authorization: string };
+let adminNorte: { authorization: string };
+let superadmin: { authorization: string };
 let mesero: { authorization: string };
 
 async function get(url: string, headers: { authorization: string }) {
@@ -20,6 +25,15 @@ beforeAll(async () => {
   srv = await construirServidor(undefined, { limiteGlobal: 100_000, limiteAuth: 100_000 });
   await sembrarCredenciales();
   admin = { authorization: `Bearer ${await tokenAcceso(sesionAdmin())}` };
+  adminNorte = {
+    authorization: `Bearer ${await tokenAcceso({
+      usuarioId: ADMIN_NORTE,
+      rol: 'administrador',
+      sucursalId: SUCURSAL_NORTE,
+      dispositivoId: null,
+    })}`,
+  };
+  superadmin = { authorization: `Bearer ${await tokenAcceso(sesionSuperadmin())}` };
   mesero = { authorization: `Bearer ${await tokenAcceso(sesionMesero())}` };
 });
 
@@ -196,5 +210,92 @@ describe('gestión del administrador', () => {
     });
     expect(r.statusCode).toBe(400);
     expect((r.json() as { error: string }).error).toBe('pin_invalido');
+  });
+});
+
+describe('roles: superadmin vs administrador', () => {
+  it('login por email respeta el rol del servidor (superadmin es global)', async () => {
+    const r = await srv.app.inject({
+      method: 'POST',
+      url: '/auth/login/admin',
+      payload: { email: 'super@lena.local', password: 'ClaveSuper2026x' },
+    });
+    expect(r.statusCode).toBe(200);
+    const s = (r.json() as { sesion: { rol: string; sucursalId: string | null } }).sesion;
+    expect(s.rol).toBe('superadmin');
+    expect(s.sucursalId).toBeNull();
+  });
+
+  it('crear sucursal: superadmin sí, administrador 403 (RF-B-1)', async () => {
+    const ok = await srv.app.inject({
+      method: 'POST',
+      url: '/admin/sucursales',
+      headers: superadmin,
+      payload: { nombre: `Sur ${uuid().slice(0, 8)}` },
+    });
+    expect(ok.statusCode).toBe(200);
+    await owner.db.execute(
+      (await import('drizzle-orm')).sql`DELETE FROM sucursal WHERE id = ${(ok.json() as { id: string }).id}`,
+    );
+
+    const no = await srv.app.inject({
+      method: 'POST',
+      url: '/admin/sucursales',
+      headers: admin,
+      payload: { nombre: 'No debería' },
+    });
+    expect(no.statusCode).toBe(403);
+  });
+
+  it('alta de administrador: superadmin sí, administrador 403 (RF-C-1)', async () => {
+    const ok = await srv.app.inject({
+      method: 'POST',
+      url: '/admin/admins',
+      headers: superadmin,
+      payload: { nombre: 'Gerente 2', email: `g2-${uuid().slice(0, 8)}@lena.local`, password: 'ClaveAdmin2026x', sucursalId: ID.sucursal },
+    });
+    expect(ok.statusCode).toBe(200);
+    await owner.db.execute(
+      (await import('drizzle-orm')).sql`DELETE FROM usuario WHERE id = ${(ok.json() as { id: string }).id}`,
+    );
+
+    const no = await srv.app.inject({
+      method: 'POST',
+      url: '/admin/admins',
+      headers: admin,
+      payload: { nombre: 'X', email: `x-${uuid().slice(0, 8)}@lena.local`, password: 'ClaveAdmin2026x', sucursalId: ID.sucursal },
+    });
+    expect(no.statusCode).toBe(403);
+  });
+
+  it('caja del día: venta y turno abierto por sucursal en alcance (RF-H)', async () => {
+    await procesarPush(app.db, { dispositivoId: ID.tabletA, eventos: cobrada().eventos });
+
+    // El admin de Centro ve solo Centro, con el turno abierto y su venta.
+    const centro = await get('/admin/caja', admin);
+    expect(centro.body).toHaveLength(1);
+    const c = (centro.body as unknown as { sucursal: string; ventas: number; turnoAbierto: boolean }[])[0];
+    expect(c?.ventas).toBe(3600);
+    expect(c?.turnoAbierto).toBe(true);
+
+    // El superadmin ve todas las sucursales.
+    const sup = await get('/admin/caja', superadmin);
+    expect((sup.body as unknown as unknown[]).length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('el administrador solo ve su sucursal; el superadmin ve todo (RS-Z-2)', async () => {
+    // Ana (Centro) cobra 3600.
+    await procesarPush(app.db, { dispositivoId: ID.tabletA, eventos: cobrada().eventos });
+
+    const centro = await get('/admin/resumen', admin);
+    expect(centro.body.ventas).toBe(3600);
+
+    // El admin de Norte no ve las ventas de Centro.
+    const norte = await get('/admin/resumen', adminNorte);
+    expect(norte.body.ventas).toBe(0);
+
+    // El superadmin ve el total (todas las sucursales).
+    const sup = await get('/admin/resumen', superadmin);
+    expect(sup.body.ventas).toBe(3600);
   });
 });

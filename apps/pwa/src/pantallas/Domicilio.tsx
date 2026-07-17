@@ -18,13 +18,13 @@ export function Domicilio({ onListo, onCancelar }: Props) {
 
   const valido = telefono.trim().length >= 7 && direccion.trim().length > 0 && nombre.trim().length > 0;
 
-  const campo = 'w-full rounded-md border border-piedra-300 bg-white px-3 py-3 text-body-lg';
-  const etiqueta = 'text-label font-medium text-piedra-600';
+  const campo = 'w-full rounded-md border border-carbon-600 bg-carbon-900 px-3 py-3 text-body-lg';
+  const etiqueta = 'text-label font-medium text-piedra-300';
 
   return (
     <div className="flex h-full flex-col p-4">
       <div className="mb-2 flex items-center justify-between">
-        <button type="button" onClick={onCancelar} className="text-piedra-500">
+        <button type="button" onClick={onCancelar} className="text-piedra-400">
           ‹ Cancelar
         </button>
         <h2 className="text-h2 font-semibold">Comanda a domicilio</h2>

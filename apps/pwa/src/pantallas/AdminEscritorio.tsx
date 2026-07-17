@@ -1,84 +1,136 @@
-// Escritorio del administrador (09 §7). Denso, escaneable, tema claro. Reúne
-// los reportes del servidor: resumen, merma/cancelaciones por mesero (la
-// mitigación de T1, §7.1), canceladas y cortes. Alcance global (RF-C-4).
-import { useEffect, useMemo, useState } from 'react';
+// Escritorio de gestión (09 §7). Topbar + tema oscuro (negro/rojo/dorado).
+// Dos niveles: superadmin (global, con selector de sucursal, alta de sucursales
+// y administradores) y administrador (acotado a su sucursal). El turno de caja
+// (abrir/cerrar) vive aquí, no en el mesero. Tipografía Arial (global).
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { formatearMoneda } from '@lena/shared';
-import { admin, exportarCsv, obtenerCatalogo } from '../dominio/api';
-import type { Cancelada, Corte, MasVendido, ProductoCat, ReporteMerma, Resumen, UsuarioAdmin } from '../dominio/api';
+import { abrirTurno, admin, cerrarTurno, exportarCsv, obtenerCatalogo, turnoActual } from '../dominio/api';
+import type {
+  CajaDia,
+  Cancelada,
+  ComandaDetalle,
+  ComandaDia,
+  Corte,
+  MasVendido,
+  ProductoCat,
+  ReporteMerma,
+  Resumen,
+  Sucursal,
+  TurnoActual,
+  UsuarioAdmin,
+} from '../dominio/api';
 
-type Seccion = 'resumen' | 'merma' | 'canceladas' | 'cortes' | 'productos' | 'usuarios' | 'gastos';
+type Rol = 'superadmin' | 'administrador' | 'cocina' | 'mesero';
+type Seccion =
+  | 'inicio'
+  | 'caja'
+  | 'merma'
+  | 'canceladas'
+  | 'cortes'
+  | 'productos'
+  | 'gastos'
+  | 'usuarios'
+  | 'sucursales'
+  | 'admins';
 
-const SECCIONES: { id: Seccion; nombre: string; alerta?: boolean }[] = [
-  { id: 'resumen', nombre: 'Resumen' },
-  { id: 'merma', nombre: 'Merma y canceladas', alerta: true },
+const SECCIONES: { id: Seccion; nombre: string; alerta?: boolean; super?: boolean }[] = [
+  { id: 'inicio', nombre: 'Inicio' },
+  { id: 'caja', nombre: 'Caja del día' },
+  { id: 'merma', nombre: 'Merma', alerta: true },
   { id: 'canceladas', nombre: 'Canceladas' },
   { id: 'cortes', nombre: 'Cortes' },
   { id: 'productos', nombre: 'Productos' },
-  { id: 'usuarios', nombre: 'Usuarios' },
   { id: 'gastos', nombre: 'Gastos' },
+  { id: 'usuarios', nombre: 'Usuarios' },
+  { id: 'sucursales', nombre: 'Sucursales', super: true },
+  { id: 'admins', nombre: 'Administradores', super: true },
 ];
 
-export function AdminEscritorio({ token, onSalir }: { token: string; onSalir: () => void }) {
-  const [seccion, setSeccion] = useState<Seccion>('resumen');
-  const hoy = useMemo(
-    () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City' }).format(new Date()),
-    [],
-  );
+const CARD = 'rounded-lg border border-carbon-700 bg-carbon-900';
+const INPUT =
+  'rounded-md border border-carbon-600 bg-carbon-800 px-2 py-1 text-piedra-100 placeholder-piedra-500 [color-scheme:dark]';
+const BTN = 'rounded-md bg-rojo-600 px-3 py-1 font-bold text-white hover:bg-rojo-500 disabled:opacity-40';
+
+export function AdminEscritorio({ token, rol, onSalir }: { token: string; rol: Rol; onSalir: () => void }) {
+  const esSuper = rol === 'superadmin';
+  const [seccion, setSeccion] = useState<Seccion>('inicio');
+  const hoy = useMemo(() => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City' }).format(new Date()), []);
   const [desde, setDesde] = useState(hoy);
   const [hasta, setHasta] = useState(hoy);
+  const [sucursal, setSucursal] = useState(''); // filtro superadmin; '' = todas
+  const [sucursales, setSucursales] = useState<Sucursal[]>([]);
+
+  const recargarSucursales = useCallback(() => {
+    admin
+      .sucursales(token)
+      .then(setSucursales)
+      .catch(() => setSucursales([]));
+  }, [token]);
+  useEffect(() => recargarSucursales(), [recargarSucursales]);
+
+  const secciones = SECCIONES.filter((s) => !s.super || esSuper);
+  const props = { token, desde, hasta, sucursal };
+  // El administrador tiene una sola sucursal (la suya); útil para Inicio/Caja.
+  const suPropia = !esSuper ? sucursales[0] : undefined;
 
   return (
-    <div className="flex h-full">
-      {/* Barra lateral */}
-      <aside className="w-48 shrink-0 border-r border-piedra-200 bg-piedra-100 p-3">
-        <h1 className="mb-4 text-h2 font-bold text-brasa-700">🔥 Leña</h1>
-        <nav className="flex flex-col gap-1">
-          {SECCIONES.map((s) => (
+    <div className="flex h-full flex-col bg-carbon-950 text-piedra-200">
+      {/* Topbar */}
+      <header className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-carbon-800 bg-carbon-900 px-4 py-2">
+        <span className="text-h2 font-bold text-oro-400">🔥 Leña</span>
+        <span className="hidden text-xs uppercase tracking-wide text-piedra-500 md:inline">
+          {esSuper ? 'Dueño' : 'Gerencia'}
+        </span>
+        <nav className="flex flex-1 flex-wrap items-center gap-1">
+          {secciones.map((s) => (
             <button
               key={s.id}
               type="button"
               onClick={() => setSeccion(s.id)}
-              className={`rounded-md px-3 py-2 text-left text-sm font-medium ${
-                seccion === s.id ? 'bg-white text-brasa-700 shadow-sm' : 'text-piedra-600 hover:bg-white/60'
+              className={`rounded-md px-3 py-1.5 text-sm font-bold ${
+                seccion === s.id ? 'bg-carbon-800 text-oro-300' : 'text-piedra-400 hover:bg-carbon-800'
               }`}
             >
-              {s.nombre} {s.alerta && <span className="text-error">⚠</span>}
+              {s.nombre} {s.alerta && <span className="text-rojo-400">⚠</span>}
             </button>
           ))}
         </nav>
-        <EstadoDispositivos token={token} />
-
-        <button type="button" onClick={onSalir} className="mt-6 text-sm text-piedra-500">
-          ‹ Salir
+        <button type="button" onClick={onSalir} className="text-sm font-bold text-piedra-400 hover:text-piedra-200">
+          Salir ›
         </button>
-      </aside>
+      </header>
 
-      {/* Contenido */}
+      {/* Sub-barra: rango de fechas + selector de sucursal */}
+      <div className="flex flex-wrap items-center gap-2 border-b border-carbon-800 px-4 py-2">
+        <input type="date" value={desde} onChange={(e) => setDesde(e.target.value)} className={INPUT} />
+        <span className="text-piedra-500">→</span>
+        <input type="date" value={hasta} onChange={(e) => setHasta(e.target.value)} className={INPUT} />
+        {esSuper && (
+          <select value={sucursal} onChange={(e) => setSucursal(e.target.value)} className={`${INPUT} ml-2`}>
+            <option value="">Todas las sucursales</option>
+            {sucursales.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.nombre}
+              </option>
+            ))}
+          </select>
+        )}
+      </div>
+
       <main className="flex-1 overflow-y-auto p-6">
-        <div className="mb-4 flex items-center gap-2">
-          <input
-            type="date"
-            value={desde}
-            onChange={(e) => setDesde(e.target.value)}
-            className="rounded-md border border-piedra-300 px-2 py-1"
-          />
-          <span className="text-piedra-400">→</span>
-          <input
-            type="date"
-            value={hasta}
-            onChange={(e) => setHasta(e.target.value)}
-            className="rounded-md border border-piedra-300 px-2 py-1"
-          />
-        </div>
-
-        {seccion === 'resumen' && <PanelResumen token={token} desde={desde} hasta={hasta} />}
-        {seccion === 'merma' && <PanelMerma token={token} desde={desde} hasta={hasta} />}
-        {seccion === 'canceladas' && <PanelCanceladas token={token} desde={desde} hasta={hasta} />}
-        {seccion === 'cortes' && <PanelCortes token={token} desde={desde} hasta={hasta} />}
+        {seccion === 'inicio' && <PanelInicio {...props} esSuper={esSuper} suPropia={suPropia} />}
+        {seccion === 'caja' && <PanelCaja token={token} />}
+        {seccion === 'merma' && <PanelMerma {...props} />}
+        {seccion === 'canceladas' && <PanelCanceladas {...props} />}
+        {seccion === 'cortes' && <PanelCortes {...props} />}
         {seccion === 'productos' && <PanelProductos token={token} />}
-        {seccion === 'usuarios' && <PanelUsuarios token={token} />}
-        {seccion === 'gastos' && <PanelGastos token={token} desde={desde} hasta={hasta} />}
+        {seccion === 'usuarios' && <PanelUsuarios token={token} esSuper={esSuper} sucursales={sucursales} />}
+        {seccion === 'gastos' && <PanelGastos {...props} sucursales={sucursales} esSuper={esSuper} />}
+        {seccion === 'sucursales' && <PanelSucursales token={token} onCambio={recargarSucursales} />}
+        {seccion === 'admins' && <PanelAdmins token={token} sucursales={sucursales} />}
       </main>
+
+      <AlertasSync token={token} />
     </div>
   );
 }
@@ -87,118 +139,307 @@ interface RangoProps {
   token: string;
   desde: string;
   hasta: string;
+  sucursal: string;
 }
 
-function PanelResumen({ token, desde, hasta }: RangoProps) {
+// ── Inicio: KPIs + turno de caja + tendencias ──
+function PanelInicio({
+  token,
+  desde,
+  hasta,
+  sucursal,
+  esSuper,
+  suPropia,
+}: RangoProps & { esSuper: boolean; suPropia: Sucursal | undefined }) {
   const [r, setR] = useState<Resumen | null>(null);
   const [top, setTop] = useState<MasVendido[]>([]);
   const [horas, setHoras] = useState<{ hora: number; ventas: number }[]>([]);
   useEffect(() => {
-    admin
-      .resumen(token, desde, hasta)
-      .then(setR)
-      .catch(() => setR(null));
-    admin
-      .masVendidos(token, desde, hasta)
-      .then(setTop)
-      .catch(() => setTop([]));
-    admin
-      .ventasPorHora(token, desde, hasta)
-      .then(setHoras)
-      .catch(() => setHoras([]));
-  }, [token, desde, hasta]);
-
+    admin.resumen(token, desde, hasta, sucursal).then(setR).catch(() => setR(null));
+    admin.masVendidos(token, desde, hasta, sucursal).then(setTop).catch(() => setTop([]));
+    admin.ventasPorHora(token, desde, hasta, sucursal).then(setHoras).catch(() => setHoras([]));
+  }, [token, desde, hasta, sucursal]);
   const maxHora = Math.max(1, ...horas.map((h) => h.ventas));
 
   return (
     <div>
-      <div className="grid grid-cols-4 gap-3">
+      {/* El administrador abre/cierra el día aquí. El superadmin lo hace cada
+          gerente en su sucursal; el superadmin lo observa en Caja del día. */}
+      {!esSuper && <TurnoCaja token={token} sucursal={suPropia} />}
+
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Kpi titulo="Ventas" valor={formatearMoneda(r?.ventas ?? 0)} />
         <Kpi titulo="Comandas" valor={String(r?.comandas ?? 0)} />
         <Kpi titulo="Ticket promedio" valor={formatearMoneda(r?.ticket ?? 0)} />
         <Kpi titulo="Merma" valor={formatearMoneda(r?.merma ?? 0)} alerta />
       </div>
 
-      <h3 className="mb-2 mt-6 text-label font-semibold uppercase text-piedra-500">Ventas por hora</h3>
-      <div className="flex h-32 items-end gap-1 rounded-lg border border-piedra-200 p-3">
-        {horas.length === 0 && <p className="m-auto text-piedra-400">Sin ventas</p>}
+      <h3 className="mb-2 mt-6 text-sm font-bold uppercase tracking-wide text-piedra-500">Ventas por hora</h3>
+      <div className={`flex h-32 items-end gap-1 p-3 ${CARD}`}>
+        {horas.length === 0 && <p className="m-auto text-piedra-500">Sin ventas</p>}
         {horas.map((h) => (
           <div key={h.hora} className="flex flex-1 flex-col items-center justify-end">
-            <div
-              className="w-full rounded-t bg-brasa-500"
-              style={{ height: `${(h.ventas / maxHora) * 100}%` }}
-              title={formatearMoneda(h.ventas)}
-            />
+            <div className="w-full rounded-t bg-rojo-500" style={{ height: `${(h.ventas / maxHora) * 100}%` }} title={formatearMoneda(h.ventas)} />
             <span className="mt-1 text-[10px] text-piedra-500 tabular-nums">{h.hora}</span>
           </div>
         ))}
       </div>
 
-      <h3 className="mb-2 mt-6 text-label font-semibold uppercase text-piedra-500">Más vendidos</h3>
-      <ol className="rounded-lg border border-piedra-200">
+      <h3 className="mb-2 mt-6 text-sm font-bold uppercase tracking-wide text-piedra-500">Más vendidos</h3>
+      <ol className={CARD}>
         {top.slice(0, 5).map((p, i) => (
-          <li key={p.nombre} className="flex justify-between border-b border-piedra-100 px-3 py-2 last:border-0">
+          <li key={p.nombre} className="flex justify-between border-b border-carbon-800 px-3 py-2 last:border-0">
             <span>
-              {i + 1}. {p.nombre}
+              <span className="font-bold text-oro-400">{i + 1}.</span> {p.nombre}
             </span>
-            <span className="tabular-nums text-piedra-600">{p.unidades}</span>
+            <span className="tabular-nums text-piedra-400">{p.unidades}</span>
           </li>
         ))}
-        {top.length === 0 && <li className="px-3 py-2 text-piedra-400">Sin datos</li>}
+        {top.length === 0 && <li className="px-3 py-2 text-piedra-500">Sin datos</li>}
       </ol>
     </div>
   );
 }
 
-function PanelMerma({ token, desde, hasta }: RangoProps) {
-  const [r, setR] = useState<ReporteMerma | null>(null);
+// Abrir/cerrar el turno de la sucursal del administrador (RF-H).
+function TurnoCaja({ token, sucursal }: { token: string; sucursal: Sucursal | undefined }) {
+  const [turno, setTurno] = useState<TurnoActual | null>(null);
+  const [cargado, setCargado] = useState(false);
+  const [fondo, setFondo] = useState('');
+  const [contado, setContado] = useState('');
+  const [motivo, setMotivo] = useState('');
+  const [msg, setMsg] = useState<string | null>(null);
+
+  const cargar = useCallback(() => {
+    turnoActual(token).then((t) => { setTurno(t); setCargado(true); }).catch(() => setCargado(true));
+  }, [token]);
+  useEffect(() => cargar(), [cargar]);
+
+  async function abrir() {
+    setMsg(null);
+    const pesos = Number(fondo);
+    if (!(pesos >= 0)) return;
+    await abrirTurno(token, Math.round(pesos * 100));
+    setFondo('');
+    cargar();
+  }
+  async function cerrar() {
+    setMsg(null);
+    const pesos = Number(contado);
+    if (!(pesos >= 0)) return;
+    const r = await cerrarTurno(token, Math.round(pesos * 100), motivo || undefined);
+    if (r.ok) {
+      setMsg(`Turno cerrado. Diferencia: ${formatearMoneda(r.cierre.diferencia)}`);
+      setContado('');
+      setMotivo('');
+      cargar();
+    } else if (r.error === 'comandas_abiertas') {
+      setMsg(`No se puede cerrar: hay ${r.comandas?.length ?? ''} comanda(s) sin cobrar.`);
+    } else if (r.error === 'motivo_requerido') {
+      setMsg('La diferencia es grande: escribe un motivo.');
+    } else {
+      setMsg('No se pudo cerrar.');
+    }
+  }
+
+  return (
+    <div className={`mb-5 p-4 ${CARD}`}>
+      <div className="mb-2 flex items-center justify-between">
+        <h3 className="text-h2 font-bold text-piedra-100">Caja / Turno del día</h3>
+        {sucursal && (
+          <span className="text-sm text-piedra-400">
+            Clave de tu sucursal: <span className="font-bold tracking-widest text-oro-300">{sucursal.clave}</span>
+          </span>
+        )}
+      </div>
+      {!cargado ? (
+        <p className="text-piedra-500">Cargando…</p>
+      ) : turno ? (
+        <div className="flex flex-wrap items-end gap-3">
+          <p className="text-piedra-300">
+            <span className="font-bold text-ok">● Turno abierto</span> · fondo{' '}
+            <span className="tabular-nums">{formatearMoneda(turno.fondoInicial)}</span>
+          </p>
+          <input value={contado} onChange={(e) => setContado(e.target.value)} placeholder="Efectivo contado $" type="number" className={`w-40 tabular-nums ${INPUT}`} />
+          <input value={motivo} onChange={(e) => setMotivo(e.target.value)} placeholder="Motivo (si hay diferencia)" className={INPUT} />
+          <button type="button" onClick={() => void cerrar()} className={BTN}>Cerrar turno</button>
+        </div>
+      ) : (
+        <div className="flex flex-wrap items-end gap-3">
+          <p className="text-piedra-400">No hay turno abierto. Ábrelo para que los meseros puedan cobrar.</p>
+          <input value={fondo} onChange={(e) => setFondo(e.target.value)} placeholder="Fondo inicial $" type="number" className={`w-40 tabular-nums ${INPUT}`} />
+          <button type="button" onClick={() => void abrir()} className={BTN}>Abrir turno</button>
+        </div>
+      )}
+      {msg && <p className="mt-2 font-bold text-oro-300">{msg}</p>}
+    </div>
+  );
+}
+
+// ── Caja del día: lista de comandas de hoy + detalle al hacer clic ──
+function PanelCaja({ token }: { token: string }) {
+  const [caja, setCaja] = useState<CajaDia[]>([]);
+  const [comandas, setComandas] = useState<ComandaDia[]>([]);
+  const [detalle, setDetalle] = useState<ComandaDetalle | null>(null);
+
+  const cargar = useCallback(() => {
+    admin.caja(token).then(setCaja).catch(() => setCaja([]));
+    admin.comandasDia(token).then(setComandas).catch(() => setComandas([]));
+  }, [token]);
   useEffect(() => {
-    admin
-      .merma(token, desde, hasta)
-      .then(setR)
-      .catch(() => setR(null));
-  }, [token, desde, hasta]);
+    cargar();
+    const t = setInterval(cargar, 15_000); // se mantiene al día tras cada cobro
+    return () => clearInterval(t);
+  }, [cargar]);
 
   return (
     <div>
-      <h2 className="mb-3 text-h2 font-semibold">Merma y cancelaciones</h2>
-      <p className="mb-4 text-piedra-600">
-        Merma total: <span className="font-bold text-error">{formatearMoneda(r?.total ?? 0)}</span>
-      </p>
+      <div className="mb-4 grid grid-cols-1 gap-3 lg:grid-cols-2">
+        {caja.map((c) => (
+          <div key={c.sucursalId} className={`p-4 ${CARD}`}>
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-h2 font-bold text-oro-300">{c.sucursal}</span>
+              <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${c.turnoAbierto ? 'text-ok' : 'text-piedra-400'}`}>
+                {c.turnoAbierto ? '● Turno abierto' : 'Turno cerrado'}
+              </span>
+            </div>
+            <p className="text-3xl font-bold tabular-nums text-piedra-100">{formatearMoneda(c.ventas)}</p>
+            <p className="text-sm text-piedra-500">
+              venta cobrada hoy · {c.comandas} comandas · {c.comandasAbiertas} sin cobrar
+            </p>
+          </div>
+        ))}
+      </div>
 
-      <h3 className="mb-2 text-label font-semibold uppercase text-piedra-500">Por mesero</h3>
+      <h3 className="mb-2 text-sm font-bold uppercase tracking-wide text-piedra-500">Comandas de hoy</h3>
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b border-carbon-700 text-left text-piedra-500">
+            <th className="py-2">Folio</th>
+            <th>Tipo</th>
+            <th>Mesa</th>
+            <th>Mesero</th>
+            <th>Total</th>
+            <th>Estado</th>
+          </tr>
+        </thead>
+        <tbody>
+          {comandas.map((c) => (
+            <tr
+              key={c.id}
+              onClick={() => admin.comandaDetalle(token, c.id).then(setDetalle).catch(() => {})}
+              className="cursor-pointer border-b border-carbon-800 hover:bg-carbon-800"
+            >
+              <td className="py-2 tabular-nums">{c.folio ?? '—'}</td>
+              <td className="capitalize text-piedra-400">{c.tipoServicio.replace('_', ' ')}</td>
+              <td className="text-piedra-400">{c.mesa ?? '—'}</td>
+              <td className="text-piedra-400">{c.mesero ?? '—'}</td>
+              <td className="tabular-nums">{formatearMoneda(c.total)}</td>
+              <td><EstadoBadge estado={c.estado} /></td>
+            </tr>
+          ))}
+          {comandas.length === 0 && (
+            <tr>
+              <td colSpan={6} className="py-3 text-piedra-500">Sin comandas hoy</td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+
+      {detalle && <DetalleComanda detalle={detalle} onCerrar={() => setDetalle(null)} />}
+    </div>
+  );
+}
+
+function EstadoBadge({ estado }: { estado: string }) {
+  const color =
+    estado === 'cobrada' ? 'text-ok' : estado === 'cancelada' ? 'text-rojo-400' : 'text-oro-300';
+  return <span className={`font-bold ${color}`}>{estado}</span>;
+}
+
+function DetalleComanda({ detalle, onCerrar }: { detalle: ComandaDetalle; onCerrar: () => void }) {
+  return (
+    <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 p-4" onClick={onCerrar}>
+      <div className={`max-h-[85vh] w-full max-w-md overflow-y-auto p-5 ${CARD}`} onClick={(e) => e.stopPropagation()}>
+        <div className="mb-3 flex items-center justify-between">
+          <h3 className="text-h2 font-bold text-oro-300">
+            Comanda {detalle.folio ? `#${detalle.folio}` : ''}
+          </h3>
+          <button type="button" onClick={onCerrar} className="text-piedra-400 hover:text-piedra-200">✕</button>
+        </div>
+        <p className="mb-3 text-sm text-piedra-400">
+          <span className="capitalize">{detalle.tipoServicio.replace('_', ' ')}</span>
+          {detalle.mesa ? ` · ${detalle.mesa}` : ''} · {detalle.mesero ?? '—'} · <EstadoBadge estado={detalle.estado} />
+        </p>
+        <ul className="mb-3 border-y border-carbon-800 py-2">
+          {detalle.lineas.map((l, i) => (
+            <li key={i} className={`flex justify-between py-1 ${l.estado === 'cancelada' ? 'text-piedra-500 line-through' : ''}`}>
+              <span>
+                {l.cantidad}× {l.nombre}
+                {l.notas && <span className="block text-xs text-piedra-500">↳ {l.notas}</span>}
+              </span>
+              <span className="tabular-nums text-piedra-300">{formatearMoneda(l.precio * l.cantidad)}</span>
+            </li>
+          ))}
+        </ul>
+        {detalle.pagos.length > 0 && (
+          <div className="mb-2 text-sm">
+            {detalle.pagos.map((p, i) => (
+              <p key={i} className="flex justify-between text-piedra-400">
+                <span className="capitalize">{p.metodo}</span>
+                <span className="tabular-nums">{formatearMoneda(p.monto)}</span>
+              </p>
+            ))}
+          </div>
+        )}
+        {detalle.motivoCancelacion && (
+          <p className="mb-2 text-sm italic text-rojo-400">Cancelada: «{detalle.motivoCancelacion}»</p>
+        )}
+        <p className="flex justify-between text-lg font-bold">
+          <span>Total</span>
+          <span className="tabular-nums text-oro-300">{formatearMoneda(detalle.total)}</span>
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function PanelMerma({ token, desde, hasta, sucursal }: RangoProps) {
+  const [r, setR] = useState<ReporteMerma | null>(null);
+  useEffect(() => {
+    admin.merma(token, desde, hasta, sucursal).then(setR).catch(() => setR(null));
+  }, [token, desde, hasta, sucursal]);
+  const sospechosos = (r?.meseros ?? []).some((m) => m.vsEquipo >= 2);
+  return (
+    <div>
+      <h2 className="mb-3 text-h2 font-bold text-piedra-100">Merma y cancelaciones</h2>
+      <p className="mb-4 text-piedra-400">
+        Merma total: <span className="font-bold text-rojo-400">{formatearMoneda(r?.total ?? 0)}</span>
+      </p>
       <table className="w-full border-collapse text-sm">
         <thead>
-          <tr className="border-b border-piedra-300 text-left text-piedra-500">
-            <th className="py-2">Mesero</th>
-            <th>Comandas</th>
-            <th>Canceladas</th>
-            <th>Tasa</th>
-            <th>Merma</th>
-            <th>vs. equipo</th>
+          <tr className="border-b border-carbon-700 text-left text-piedra-500">
+            <th className="py-2">Mesero</th><th>Comandas</th><th>Canceladas</th><th>Tasa</th><th>Merma</th><th>vs. equipo</th>
           </tr>
         </thead>
         <tbody>
           {(r?.meseros ?? []).map((m) => {
-            const sospechoso = m.vsEquipo >= 2;
+            const s = m.vsEquipo >= 2;
             return (
-              <tr key={m.id} className={`border-b border-piedra-100 ${sospechoso ? 'bg-[#FEF2F2]' : ''}`}>
-                <td className="py-2 font-medium">{m.nombre}</td>
+              <tr key={m.id} className={`border-b border-carbon-800 ${s ? 'bg-rojo-700/20' : ''}`}>
+                <td className="py-2 font-bold">{m.nombre}</td>
                 <td className="tabular-nums">{m.comandas}</td>
                 <td className="tabular-nums">{m.canceladas}</td>
                 <td className="tabular-nums">{(m.tasa * 100).toFixed(1)}%</td>
                 <td className="tabular-nums">{formatearMoneda(m.merma)}</td>
-                <td className={`tabular-nums font-semibold ${sospechoso ? 'text-error' : 'text-piedra-400'}`}>
-                  {sospechoso ? `⚠ ${m.vsEquipo.toFixed(1)}×` : '—'}
-                </td>
+                <td className={`tabular-nums font-bold ${s ? 'text-rojo-400' : 'text-piedra-500'}`}>{s ? `⚠ ${m.vsEquipo.toFixed(1)}×` : '—'}</td>
               </tr>
             );
           })}
         </tbody>
       </table>
-      {/* La regla que hace visible el patrón que 62 eventos sueltos esconden. */}
-      {(r?.meseros ?? []).some((m) => m.vsEquipo >= 2) && (
-        <p className="mt-3 rounded-md bg-[#FEF2F2] p-2 text-error">
+      {sospechosos && (
+        <p className="mt-3 rounded-md bg-rojo-700/20 p-2 font-bold text-rojo-400">
           ⚠️ Un mesero cancela mucho más que el promedio. Revisar (control antifraude T1).
         </p>
       )}
@@ -206,99 +447,63 @@ function PanelMerma({ token, desde, hasta }: RangoProps) {
   );
 }
 
-function PanelCanceladas({ token, desde, hasta }: RangoProps) {
+function PanelCanceladas({ token, desde, hasta, sucursal }: RangoProps) {
   const [filas, setFilas] = useState<Cancelada[]>([]);
   useEffect(() => {
-    admin
-      .canceladas(token, desde, hasta)
-      .then(setFilas)
-      .catch(() => setFilas([]));
-  }, [token, desde, hasta]);
+    admin.canceladas(token, desde, hasta, sucursal).then(setFilas).catch(() => setFilas([]));
+  }, [token, desde, hasta, sucursal]);
   return (
     <div>
       <div className="mb-3 flex items-center justify-between">
-        <h2 className="text-h2 font-semibold">Comandas canceladas</h2>
-        <button
-          type="button"
-          onClick={() => void exportarCsv(token, 'canceladas', desde, hasta)}
-          className="text-sm text-info underline"
-        >
+        <h2 className="text-h2 font-bold text-piedra-100">Comandas canceladas</h2>
+        <button type="button" onClick={() => void exportarCsv(token, 'canceladas', desde, hasta)} className="text-sm font-bold text-oro-400 underline hover:text-oro-300">
           Exportar CSV
         </button>
       </div>
       <table className="w-full text-sm">
         <thead>
-          <tr className="border-b border-piedra-300 text-left text-piedra-500">
-            <th className="py-2">Folio</th>
-            <th>Mesero</th>
-            <th>Motivo</th>
-            <th>Costo mermado</th>
-          </tr>
+          <tr className="border-b border-carbon-700 text-left text-piedra-500"><th className="py-2">Folio</th><th>Mesero</th><th>Motivo</th><th>Costo mermado</th></tr>
         </thead>
         <tbody>
           {filas.map((c) => (
-            <tr key={c.id} className="border-b border-piedra-100">
+            <tr key={c.id} className="border-b border-carbon-800">
               <td className="py-2 tabular-nums">{c.folio ?? '—'}</td>
               <td>{c.mesero}</td>
-              <td className="text-piedra-600">{c.motivo}</td>
-              <td className="tabular-nums text-error">{formatearMoneda(c.costoMermado)}</td>
+              <td className="text-piedra-400">{c.motivo}</td>
+              <td className="tabular-nums text-rojo-400">{formatearMoneda(c.costoMermado)}</td>
             </tr>
           ))}
-          {filas.length === 0 && (
-            <tr>
-              <td colSpan={4} className="py-3 text-piedra-400">
-                Sin cancelaciones en el periodo
-              </td>
-            </tr>
-          )}
+          {filas.length === 0 && <tr><td colSpan={4} className="py-3 text-piedra-500">Sin cancelaciones en el periodo</td></tr>}
         </tbody>
       </table>
     </div>
   );
 }
 
-function PanelCortes({ token, desde, hasta }: RangoProps) {
+function PanelCortes({ token, desde, hasta, sucursal }: RangoProps) {
   const [filas, setFilas] = useState<Corte[]>([]);
   useEffect(() => {
-    admin
-      .cortes(token, desde, hasta)
-      .then(setFilas)
-      .catch(() => setFilas([]));
-  }, [token, desde, hasta]);
+    admin.cortes(token, desde, hasta, sucursal).then(setFilas).catch(() => setFilas([]));
+  }, [token, desde, hasta, sucursal]);
   return (
     <div>
-      <h2 className="mb-3 text-h2 font-semibold">Historial de cortes</h2>
+      <h2 className="mb-3 text-h2 font-bold text-piedra-100">Historial de cortes</h2>
       <table className="w-full text-sm">
         <thead>
-          <tr className="border-b border-piedra-300 text-left text-piedra-500">
-            <th className="py-2">Cerrado</th>
-            <th>Esperado</th>
-            <th>Contado</th>
-            <th>Diferencia</th>
-            <th>Tarjeta</th>
-            <th>Transfer.</th>
-          </tr>
+          <tr className="border-b border-carbon-700 text-left text-piedra-500"><th className="py-2">Cerrado</th><th>Esperado</th><th>Contado</th><th>Diferencia</th><th>Tarjeta</th><th>Transfer.</th></tr>
         </thead>
         <tbody>
           {filas.map((c) => (
-            <tr key={c.id} className="border-b border-piedra-100">
-              <td className="py-2 text-piedra-600">{c.cerradoAt?.slice(0, 16).replace('T', ' ')}</td>
+            <tr key={c.id} className="border-b border-carbon-800">
+              <td className="py-2 text-piedra-400">{c.cerradoAt?.slice(0, 16).replace('T', ' ')}</td>
               <td className="tabular-nums">{formatearMoneda(c.esperado)}</td>
               <td className="tabular-nums">{formatearMoneda(c.contado)}</td>
-              <td className={`tabular-nums ${c.diferencia !== 0 ? 'font-semibold text-error' : 'text-ok'}`}>
-                {formatearMoneda(c.diferencia)}
-              </td>
+              <td className={`tabular-nums ${c.diferencia !== 0 ? 'font-bold text-rojo-400' : 'text-ok'}`}>{formatearMoneda(c.diferencia)}</td>
               <td className="tabular-nums">{formatearMoneda(c.tarjeta)}</td>
               <td className="tabular-nums">{formatearMoneda(c.transferencia)}</td>
             </tr>
           ))}
-          {filas.length === 0 && (
-            <tr>
-              <td colSpan={6} className="py-3 text-piedra-400">
-                Sin cortes cerrados en el periodo
-              </td>
-            </tr>
-          )}
+          {filas.length === 0 && <tr><td colSpan={6} className="py-3 text-piedra-500">Sin cortes cerrados en el periodo</td></tr>}
         </tbody>
       </table>
     </div>
@@ -308,87 +513,48 @@ function PanelCortes({ token, desde, hasta }: RangoProps) {
 function PanelProductos({ token }: { token: string }) {
   const [productos, setProductos] = useState<ProductoCat[]>([]);
   const [editando, setEditando] = useState<Record<string, string>>({});
-  const [historial, setHistorial] = useState<{
-    id: string;
-    filas: { precioAnterior: string; precioNuevo: string; createdAt: string }[];
-  } | null>(null);
-
-  async function cargar() {
-    const cat = await obtenerCatalogo(token);
-    setProductos(cat.productos);
-  }
-  useEffect(() => {
-    void cargar();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token]);
+  const [historial, setHistorial] = useState<{ id: string; filas: { precioAnterior: string; precioNuevo: string; createdAt: string }[] } | null>(null);
+  const cargar = useCallback(async () => setProductos((await obtenerCatalogo(token)).productos), [token]);
+  useEffect(() => { void cargar(); }, [cargar]);
 
   async function guardarPrecio(id: string) {
     const pesos = Number(editando[id]);
     if (!pesos) return;
     await admin.cambiarPrecio(token, id, Math.round(pesos * 100));
-    setEditando((e) => {
-      const n = { ...e };
-      delete n[id];
-      return n;
-    });
+    setEditando((e) => { const n = { ...e }; delete n[id]; return n; });
     await cargar();
   }
 
   return (
     <div>
-      <h2 className="mb-3 text-h2 font-semibold">Productos</h2>
+      <h2 className="mb-1 text-h2 font-bold text-piedra-100">Productos</h2>
+      <p className="mb-3 text-sm text-piedra-500">El menú y sus precios son del negocio (aplican a todas las sucursales).</p>
       <table className="w-full text-sm">
         <thead>
-          <tr className="border-b border-piedra-300 text-left text-piedra-500">
-            <th className="py-2">Producto</th>
-            <th>Precio</th>
-            <th>Nuevo precio</th>
-            <th></th>
-          </tr>
+          <tr className="border-b border-carbon-700 text-left text-piedra-500"><th className="py-2">Producto</th><th>Precio</th><th>Nuevo precio</th><th></th></tr>
         </thead>
         <tbody>
           {productos.map((p) => (
-            <tr key={p.id} className="border-b border-piedra-100">
-              <td className="py-2 font-medium">{p.nombre}</td>
+            <tr key={p.id} className="border-b border-carbon-800">
+              <td className="py-2 font-bold">{p.nombre}</td>
               <td className="tabular-nums">{formatearMoneda(p.precio)}</td>
               <td>
-                <input
-                  type="number"
-                  value={editando[p.id] ?? ''}
-                  onChange={(e) => setEditando((s) => ({ ...s, [p.id]: e.target.value }))}
-                  className="w-24 rounded-md border border-piedra-300 px-2 py-1 tabular-nums"
-                  placeholder="$"
-                />
+                <input type="number" value={editando[p.id] ?? ''} onChange={(e) => setEditando((s) => ({ ...s, [p.id]: e.target.value }))} className={`w-24 tabular-nums ${INPUT}`} placeholder="$" />
               </td>
-              <td className="flex gap-2 py-1">
-                <button
-                  type="button"
-                  onClick={() => void guardarPrecio(p.id)}
-                  disabled={!editando[p.id]}
-                  className="text-brasa-700 disabled:text-piedra-300"
-                >
-                  Guardar
-                </button>
-                <button
-                  type="button"
-                  onClick={() => admin.historialPrecios(token, p.id).then((filas) => setHistorial({ id: p.id, filas }))}
-                  className="text-info"
-                >
-                  Historial
-                </button>
+              <td className="flex gap-3 py-1">
+                <button type="button" onClick={() => void guardarPrecio(p.id)} disabled={!editando[p.id]} className="font-bold text-oro-400 hover:text-oro-300 disabled:text-piedra-600">Guardar</button>
+                <button type="button" onClick={() => admin.historialPrecios(token, p.id).then((filas) => setHistorial({ id: p.id, filas }))} className="text-piedra-400 hover:text-piedra-200">Historial</button>
               </td>
             </tr>
           ))}
         </tbody>
       </table>
       {historial && (
-        <div className="mt-4 rounded-lg border border-piedra-200 p-3 text-sm">
-          <p className="mb-1 font-semibold">Historial de precio (RF-D-4)</p>
-          {historial.filas.length === 0 && <p className="text-piedra-400">Sin cambios registrados</p>}
+        <div className={`mt-4 p-3 text-sm ${CARD}`}>
+          <p className="mb-1 font-bold text-piedra-200">Historial de precio (RF-D-4)</p>
+          {historial.filas.length === 0 && <p className="text-piedra-500">Sin cambios registrados</p>}
           {historial.filas.map((h, i) => (
-            <p key={i} className="tabular-nums text-piedra-600">
-              {h.createdAt.slice(0, 10)}: ${h.precioAnterior} → ${h.precioNuevo}
-            </p>
+            <p key={i} className="tabular-nums text-piedra-400">{h.createdAt.slice(0, 10)}: ${h.precioAnterior} → ${h.precioNuevo}</p>
           ))}
         </div>
       )}
@@ -396,96 +562,52 @@ function PanelProductos({ token }: { token: string }) {
   );
 }
 
-function PanelUsuarios({ token }: { token: string }) {
+function PanelUsuarios({ token, esSuper, sucursales }: { token: string; esSuper: boolean; sucursales: Sucursal[] }) {
   const [usuarios, setUsuarios] = useState<UsuarioAdmin[]>([]);
-  const [sucursales, setSucursales] = useState<{ id: string; nombre: string }[]>([]);
   const [nuevo, setNuevo] = useState({ nombre: '', rol: 'mesero', sucursalId: '', pin: '' });
   const [error, setError] = useState<string | null>(null);
-
-  async function cargar() {
-    setUsuarios(await admin.usuarios(token));
-  }
-  useEffect(() => {
-    void cargar();
-    admin.sucursales(token).then((s) => {
-      setSucursales(s);
-      setNuevo((n) => ({ ...n, sucursalId: s[0]?.id ?? '' }));
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token]);
+  const nombreSuc = useMemo(() => new Map(sucursales.map((s) => [s.id, s.nombre])), [sucursales]);
+  const cargar = useCallback(async () => setUsuarios(await admin.usuarios(token)), [token]);
+  useEffect(() => { void cargar(); }, [cargar]);
+  useEffect(() => setNuevo((n) => ({ ...n, sucursalId: sucursales[0]?.id ?? '' })), [sucursales]);
 
   async function crear() {
     setError(null);
     try {
-      await admin.crearUsuario(token, nuevo);
+      await admin.crearUsuario(token, { nombre: nuevo.nombre, rol: nuevo.rol, pin: nuevo.pin, ...(esSuper ? { sucursalId: nuevo.sucursalId } : {}) });
       setNuevo((n) => ({ ...n, nombre: '', pin: '' }));
       await cargar();
-    } catch {
-      setError('PIN inválido o datos incompletos');
-    }
+    } catch { setError('PIN inválido o datos incompletos'); }
   }
 
   return (
     <div>
-      <h2 className="mb-3 text-h2 font-semibold">Usuarios</h2>
-      <div className="mb-4 flex flex-wrap items-end gap-2 rounded-lg border border-piedra-200 p-3">
-        <input
-          value={nuevo.nombre}
-          onChange={(e) => setNuevo({ ...nuevo, nombre: e.target.value })}
-          placeholder="Nombre"
-          className="rounded-md border border-piedra-300 px-2 py-1"
-        />
-        <select
-          value={nuevo.rol}
-          onChange={(e) => setNuevo({ ...nuevo, rol: e.target.value })}
-          className="rounded-md border border-piedra-300 px-2 py-1"
-        >
-          <option value="mesero">Mesero</option>
-          <option value="cocina">Cocina</option>
+      <h2 className="mb-3 text-h2 font-bold text-piedra-100">Usuarios</h2>
+      <div className={`mb-4 flex flex-wrap items-end gap-2 p-3 ${CARD}`}>
+        <input value={nuevo.nombre} onChange={(e) => setNuevo({ ...nuevo, nombre: e.target.value })} placeholder="Nombre" className={INPUT} />
+        <select value={nuevo.rol} onChange={(e) => setNuevo({ ...nuevo, rol: e.target.value })} className={INPUT}>
+          <option value="mesero">Mesero</option><option value="cocina">Cocina</option>
         </select>
-        <select
-          value={nuevo.sucursalId}
-          onChange={(e) => setNuevo({ ...nuevo, sucursalId: e.target.value })}
-          className="rounded-md border border-piedra-300 px-2 py-1"
-        >
-          {sucursales.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.nombre}
-            </option>
-          ))}
-        </select>
-        <input
-          value={nuevo.pin}
-          onChange={(e) => setNuevo({ ...nuevo, pin: e.target.value })}
-          placeholder="PIN (6 díg.)"
-          inputMode="numeric"
-          className="w-28 rounded-md border border-piedra-300 px-2 py-1 tabular-nums"
-        />
-        <button
-          type="button"
-          onClick={() => void crear()}
-          className="rounded-md bg-brasa-700 px-3 py-1 font-semibold text-white"
-        >
-          Crear
-        </button>
-        {error && <span className="text-error">{error}</span>}
+        {esSuper && (
+          <select value={nuevo.sucursalId} onChange={(e) => setNuevo({ ...nuevo, sucursalId: e.target.value })} className={INPUT}>
+            {sucursales.map((s) => <option key={s.id} value={s.id}>{s.nombre}</option>)}
+          </select>
+        )}
+        <input value={nuevo.pin} onChange={(e) => setNuevo({ ...nuevo, pin: e.target.value })} placeholder="PIN (6 díg.)" inputMode="numeric" className={`w-28 tabular-nums ${INPUT}`} />
+        <button type="button" onClick={() => void crear()} className={BTN}>Crear</button>
+        {error && <span className="font-bold text-rojo-400">{error}</span>}
       </div>
       <table className="w-full text-sm">
         <tbody>
           {usuarios.map((u) => (
-            <tr key={u.id} className="border-b border-piedra-100">
-              <td className="py-2 font-medium">{u.nombre}</td>
+            <tr key={u.id} className="border-b border-carbon-800">
+              <td className="py-2 font-bold">{u.nombre}</td>
               <td className="capitalize text-piedra-500">{u.rol}</td>
-              <td className={u.activo ? 'text-ok' : 'text-piedra-400'}>{u.activo ? 'activo' : 'baja'}</td>
+              {esSuper && <td className="text-piedra-500">{u.sucursalId ? nombreSuc.get(u.sucursalId) : '—'}</td>}
+              <td className={u.activo ? 'text-ok' : 'text-piedra-500'}>{u.activo ? 'activo' : 'baja'}</td>
               <td className="py-1 text-right">
-                {u.activo && u.rol !== 'administrador' && (
-                  <button
-                    type="button"
-                    onClick={() => void admin.bajaUsuario(token, u.id).then(cargar)}
-                    className="text-error"
-                  >
-                    Dar de baja
-                  </button>
+                {u.activo && u.rol !== 'administrador' && u.rol !== 'superadmin' && (
+                  <button type="button" onClick={() => void admin.bajaUsuario(token, u.id).then(cargar)} className="font-bold text-rojo-400 hover:text-rojo-300">Dar de baja</button>
                 )}
               </td>
             </tr>
@@ -496,145 +618,208 @@ function PanelUsuarios({ token }: { token: string }) {
   );
 }
 
-function PanelGastos({ token, desde, hasta }: RangoProps) {
-  const [gastos, setGastos] = useState<
-    { id: string; categoria: string; concepto: string; monto: number; fecha: string }[]
-  >([]);
-  const [sucursales, setSucursales] = useState<{ id: string; nombre: string }[]>([]);
+function PanelGastos({ token, desde, hasta, sucursal, sucursales, esSuper }: RangoProps & { sucursales: Sucursal[]; esSuper: boolean }) {
+  const [gastos, setGastos] = useState<{ id: string; categoria: string; concepto: string; monto: number; fecha: string }[]>([]);
   const [nuevo, setNuevo] = useState({ categoria: 'insumo', concepto: '', monto: '', sucursalId: '' });
-
-  async function cargar() {
-    setGastos(await admin.gastos(token, desde, hasta));
-  }
-  useEffect(() => {
-    void cargar();
-    admin.sucursales(token).then((s) => {
-      setSucursales(s);
-      setNuevo((n) => ({ ...n, sucursalId: s[0]?.id ?? '' }));
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token, desde, hasta]);
+  const cargar = useCallback(async () => setGastos(await admin.gastos(token, desde, hasta, sucursal)), [token, desde, hasta, sucursal]);
+  useEffect(() => { void cargar(); }, [cargar]);
+  useEffect(() => setNuevo((n) => ({ ...n, sucursalId: sucursales[0]?.id ?? '' })), [sucursales]);
 
   async function crear() {
     if (!nuevo.concepto || !nuevo.monto) return;
-    await admin.crearGasto(token, {
-      sucursalId: nuevo.sucursalId,
-      categoria: nuevo.categoria,
-      concepto: nuevo.concepto,
-      monto: Math.round(Number(nuevo.monto) * 100),
-      fecha: hasta,
-    });
+    await admin.crearGasto(token, { categoria: nuevo.categoria, concepto: nuevo.concepto, monto: Math.round(Number(nuevo.monto) * 100), fecha: hasta, ...(esSuper ? { sucursalId: nuevo.sucursalId } : {}) });
     setNuevo((n) => ({ ...n, concepto: '', monto: '' }));
     await cargar();
   }
 
   return (
     <div>
-      <h2 className="mb-3 text-h2 font-semibold">Gastos</h2>
-      <div className="mb-4 flex flex-wrap items-end gap-2 rounded-lg border border-piedra-200 p-3">
-        <select
-          value={nuevo.categoria}
-          onChange={(e) => setNuevo({ ...nuevo, categoria: e.target.value })}
-          className="rounded-md border border-piedra-300 px-2 py-1"
-        >
-          {['insumo', 'servicio', 'sueldo', 'renta', 'otro'].map((c) => (
-            <option key={c} value={c}>
-              {c}
-            </option>
-          ))}
+      <h2 className="mb-3 text-h2 font-bold text-piedra-100">Gastos</h2>
+      <div className={`mb-4 flex flex-wrap items-end gap-2 p-3 ${CARD}`}>
+        <select value={nuevo.categoria} onChange={(e) => setNuevo({ ...nuevo, categoria: e.target.value })} className={INPUT}>
+          {['insumo', 'servicio', 'sueldo', 'renta', 'otro'].map((c) => <option key={c} value={c}>{c}</option>)}
         </select>
-        <input
-          value={nuevo.concepto}
-          onChange={(e) => setNuevo({ ...nuevo, concepto: e.target.value })}
-          placeholder="Concepto"
-          className="rounded-md border border-piedra-300 px-2 py-1"
-        />
-        <input
-          value={nuevo.monto}
-          onChange={(e) => setNuevo({ ...nuevo, monto: e.target.value })}
-          placeholder="Monto $"
-          type="number"
-          className="w-28 rounded-md border border-piedra-300 px-2 py-1 tabular-nums"
-        />
-        <select
-          value={nuevo.sucursalId}
-          onChange={(e) => setNuevo({ ...nuevo, sucursalId: e.target.value })}
-          className="rounded-md border border-piedra-300 px-2 py-1"
-        >
-          {sucursales.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.nombre}
-            </option>
-          ))}
-        </select>
-        <button
-          type="button"
-          onClick={() => void crear()}
-          className="rounded-md bg-brasa-700 px-3 py-1 font-semibold text-white"
-        >
-          Registrar
-        </button>
+        <input value={nuevo.concepto} onChange={(e) => setNuevo({ ...nuevo, concepto: e.target.value })} placeholder="Concepto" className={INPUT} />
+        <input value={nuevo.monto} onChange={(e) => setNuevo({ ...nuevo, monto: e.target.value })} placeholder="Monto $" type="number" className={`w-28 tabular-nums ${INPUT}`} />
+        {esSuper && (
+          <select value={nuevo.sucursalId} onChange={(e) => setNuevo({ ...nuevo, sucursalId: e.target.value })} className={INPUT}>
+            {sucursales.map((s) => <option key={s.id} value={s.id}>{s.nombre}</option>)}
+          </select>
+        )}
+        <button type="button" onClick={() => void crear()} className={BTN}>Registrar</button>
       </div>
       <table className="w-full text-sm">
         <tbody>
           {gastos.map((g) => (
-            <tr key={g.id} className="border-b border-piedra-100">
+            <tr key={g.id} className="border-b border-carbon-800">
               <td className="py-2 capitalize text-piedra-500">{g.categoria}</td>
               <td>{g.concepto}</td>
               <td className="tabular-nums">{formatearMoneda(g.monto)}</td>
-              <td className="text-piedra-400">{g.fecha}</td>
+              <td className="text-piedra-500">{g.fecha}</td>
             </tr>
           ))}
-          {gastos.length === 0 && (
-            <tr>
-              <td colSpan={4} className="py-3 text-piedra-400">
-                Sin gastos en el periodo
-              </td>
-            </tr>
-          )}
+          {gastos.length === 0 && <tr><td colSpan={4} className="py-3 text-piedra-500">Sin gastos en el periodo</td></tr>}
         </tbody>
       </table>
     </div>
   );
 }
 
-// Estado de sync de las tablets (RNF-O-5): detecta la que cree sincronizar y
-// no lo hace. Umbral de alerta: 10 minutos.
-function EstadoDispositivos({ token }: { token: string }) {
-  const [disp, setDisp] = useState<{ id: string; nombre: string; activo: boolean; minutosSinSync: number | null }[]>(
-    [],
+// Alta/baja de sucursales (RF-B). La clave se muestra grande: es lo que el
+// mesero escribe para entrar. onCambio refresca la lista global (para que las
+// nuevas aparezcan al asignar admin/usuarios/gastos).
+function PanelSucursales({ token, onCambio }: { token: string; onCambio: () => void }) {
+  const [filas, setFilas] = useState<Sucursal[]>([]);
+  const [nuevo, setNuevo] = useState({ nombre: '', direccion: '' });
+  const [error, setError] = useState<string | null>(null);
+  const cargar = useCallback(async () => setFilas(await admin.sucursales(token)), [token]);
+  useEffect(() => { void cargar(); }, [cargar]);
+
+  async function crear() {
+    setError(null);
+    if (!nuevo.nombre.trim()) return;
+    try {
+      await admin.crearSucursal(token, { nombre: nuevo.nombre, ...(nuevo.direccion ? { direccion: nuevo.direccion } : {}) });
+      setNuevo({ nombre: '', direccion: '' });
+      await cargar();
+      onCambio();
+    } catch { setError('No se pudo crear'); }
+  }
+
+  return (
+    <div>
+      <h2 className="mb-3 text-h2 font-bold text-piedra-100">Sucursales</h2>
+      <div className={`mb-5 flex flex-wrap items-end gap-2 p-3 ${CARD}`}>
+        <input value={nuevo.nombre} onChange={(e) => setNuevo({ ...nuevo, nombre: e.target.value })} placeholder="Nombre (p. ej. Sur)" className={INPUT} />
+        <input value={nuevo.direccion} onChange={(e) => setNuevo({ ...nuevo, direccion: e.target.value })} placeholder="Dirección" className={`w-64 ${INPUT}`} />
+        <button type="button" onClick={() => void crear()} className={BTN}>Agregar sucursal</button>
+        {error && <span className="font-bold text-rojo-400">{error}</span>}
+      </div>
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+        {filas.map((s) => (
+          <div key={s.id} className={`p-4 ${CARD}`}>
+            <div className="mb-1 flex items-center justify-between">
+              <span className="text-h2 font-bold text-oro-300">{s.nombre}</span>
+              <span className={`text-xs font-bold ${s.activo ? 'text-ok' : 'text-piedra-500'}`}>{s.activo ? 'activa' : 'inactiva'}</span>
+            </div>
+            <p className="mb-2 text-sm text-piedra-400">
+              Clave: <span className="text-lg font-bold tracking-widest text-oro-400">{s.clave}</span>
+            </p>
+            <p className="mb-3 text-sm text-piedra-500">{s.direccion || 'Sin dirección'}</p>
+            <button type="button" onClick={() => void admin.editarSucursal(token, s.id, { activo: !s.activo }).then(() => { void cargar(); onCambio(); })} className="text-sm font-bold text-piedra-400 hover:text-piedra-200">
+              {s.activo ? 'Desactivar' : 'Reactivar'}
+            </button>
+          </div>
+        ))}
+        {filas.length === 0 && <p className="text-piedra-500">Sin sucursales.</p>}
+      </div>
+    </div>
   );
+}
+
+function PanelAdmins({ token, sucursales }: { token: string; sucursales: Sucursal[] }) {
+  const [usuarios, setUsuarios] = useState<UsuarioAdmin[]>([]);
+  const [nuevo, setNuevo] = useState({ nombre: '', email: '', password: '', sucursalId: '' });
+  const [error, setError] = useState<string | null>(null);
+  const claveSuc = useMemo(() => new Map(sucursales.map((s) => [s.id, s])), [sucursales]);
+  const cargar = useCallback(async () => setUsuarios(await admin.usuarios(token)), [token]);
+  useEffect(() => { void cargar(); }, [cargar]);
+  useEffect(() => setNuevo((n) => ({ ...n, sucursalId: sucursales[0]?.id ?? '' })), [sucursales]);
+  const admins = usuarios.filter((u) => u.rol === 'administrador');
+
+  async function crear() {
+    setError(null);
+    if (!nuevo.nombre || !nuevo.email || !nuevo.password || !nuevo.sucursalId) return;
+    try {
+      await admin.crearAdmin(token, nuevo);
+      setNuevo((n) => ({ ...n, nombre: '', email: '', password: '' }));
+      await cargar();
+    } catch { setError('Contraseña débil o correo repetido'); }
+  }
+
+  return (
+    <div>
+      <h2 className="mb-1 text-h2 font-bold text-piedra-100">Administradores</h2>
+      <p className="mb-3 text-sm text-piedra-500">Cada gerente ve y gestiona solo su sucursal.</p>
+      <div className={`mb-5 flex flex-wrap items-end gap-2 p-3 ${CARD}`}>
+        <input value={nuevo.nombre} onChange={(e) => setNuevo({ ...nuevo, nombre: e.target.value })} placeholder="Nombre" className={INPUT} />
+        <input value={nuevo.email} onChange={(e) => setNuevo({ ...nuevo, email: e.target.value })} placeholder="correo@negocio.mx" type="email" className={`w-56 ${INPUT}`} />
+        <input value={nuevo.password} onChange={(e) => setNuevo({ ...nuevo, password: e.target.value })} placeholder="Contraseña" type="password" className={INPUT} />
+        <select value={nuevo.sucursalId} onChange={(e) => setNuevo({ ...nuevo, sucursalId: e.target.value })} className={INPUT}>
+          {sucursales.map((s) => <option key={s.id} value={s.id}>{s.nombre}</option>)}
+        </select>
+        <button type="button" onClick={() => void crear()} className={BTN}>Crear administrador</button>
+        {error && <span className="font-bold text-rojo-400">{error}</span>}
+      </div>
+      <table className="w-full text-sm">
+        <tbody>
+          {admins.map((u) => {
+            const s = u.sucursalId ? claveSuc.get(u.sucursalId) : undefined;
+            return (
+              <tr key={u.id} className="border-b border-carbon-800">
+                <td className="py-2 font-bold">{u.nombre}</td>
+                <td className="text-oro-300">{s?.nombre ?? '—'}</td>
+                <td className="text-piedra-500">clave <span className="font-bold tracking-widest text-oro-400">{s?.clave ?? '—'}</span></td>
+                <td className={u.activo ? 'text-ok' : 'text-piedra-500'}>{u.activo ? 'activo' : 'baja'}</td>
+                <td className="py-1 text-right">
+                  {u.activo && <button type="button" onClick={() => void admin.bajaUsuario(token, u.id).then(cargar)} className="font-bold text-rojo-400 hover:text-rojo-300">Dar de baja</button>}
+                </td>
+              </tr>
+            );
+          })}
+          {admins.length === 0 && <tr><td className="py-3 text-piedra-500">Sin administradores.</td></tr>}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// Alertas de tablets sin sync como toasts que se borran a los 5 s (RNF-O-5).
+function AlertasSync({ token }: { token: string }) {
+  const [toasts, setToasts] = useState<{ key: number; texto: string }[]>([]);
+  const [, setAvisadas] = useState<Set<string>>(new Set());
+
   useEffect(() => {
-    const cargar = () =>
-      admin
-        .dispositivos(token)
-        .then(setDisp)
-        .catch(() => setDisp([]));
+    const cargar = async () => {
+      let disp: { id: string; nombre: string; activo: boolean; minutosSinSync: number | null }[] = [];
+      try {
+        disp = await admin.dispositivos(token);
+      } catch {
+        return;
+      }
+      const rezagadas = disp.filter((d) => d.activo && d.minutosSinSync !== null && d.minutosSinSync >= 10);
+      setAvisadas((prev) => {
+        const vistos = new Set(rezagadas.map((d) => d.id));
+        const nuevos = rezagadas.filter((d) => !prev.has(d.id));
+        for (const d of nuevos) {
+          const key = Date.now() + Math.random();
+          setToasts((t) => [...t, { key, texto: `⚠ ${d.nombre} · ${d.minutosSinSync} min sin sync` }]);
+          setTimeout(() => setToasts((t) => t.filter((x) => x.key !== key)), 5000);
+        }
+        return vistos; // olvida las que ya se pusieron al día → vuelve a avisar si recaen
+      });
+    };
     void cargar();
     const t = setInterval(cargar, 30_000);
     return () => clearInterval(t);
   }, [token]);
 
-  const rezagadas = disp.filter((d) => d.activo && d.minutosSinSync !== null && d.minutosSinSync >= 10);
+  if (toasts.length === 0) return null;
   return (
-    <div className="mt-6 border-t border-piedra-200 pt-3 text-xs">
-      {rezagadas.length === 0 ? (
-        <p className="flex items-center gap-1 text-ok">● Sistema en línea</p>
-      ) : (
-        rezagadas.map((d) => (
-          <p key={d.id} className="flex items-center gap-1 text-error">
-            ⚠ {d.nombre} · {d.minutosSinSync} min sin sync
-          </p>
-        ))
-      )}
+    <div className="pointer-events-none fixed bottom-4 right-4 z-50 flex flex-col gap-2">
+      {toasts.map((t) => (
+        <div key={t.key} className="rounded-md border border-rojo-600 bg-carbon-800 px-4 py-2 font-bold text-rojo-400 shadow-lg">
+          {t.texto}
+        </div>
+      ))}
     </div>
   );
 }
 
 function Kpi({ titulo, valor, alerta }: { titulo: string; valor: string; alerta?: boolean }) {
   return (
-    <div className="rounded-lg border border-piedra-200 bg-white p-4">
-      <p className={`text-2xl font-bold tabular-nums ${alerta ? 'text-error' : 'text-piedra-900'}`}>{valor}</p>
+    <div className={`p-4 ${CARD}`}>
+      <p className={`text-2xl font-bold tabular-nums ${alerta ? 'text-rojo-400' : 'text-oro-300'}`}>{valor}</p>
       <p className="text-sm text-piedra-500">{titulo}</p>
     </div>
   );

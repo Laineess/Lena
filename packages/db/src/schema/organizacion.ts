@@ -10,6 +10,9 @@ import { rolUsuario } from './enums';
 export const sucursal = pgTable('sucursal', {
   id: uuid('id').primaryKey(),
   nombre: text('nombre').notNull(),
+  /** Clave única de la sucursal (RF-B): el mesero/cocina la escribe para entrar
+   * a esa sucursal. Se genera al dar de alta la sucursal. Visible para gestión. */
+  clave: text('clave').notNull().unique(),
   direccion: text('direccion'),
   /**
    * Umbrales del cronómetro de cocina en MINUTOS (RF-F-8). Configurables por
@@ -28,13 +31,14 @@ export const usuario = pgTable(
   'usuario',
   {
     id: uuid('id').primaryKey(),
-    /** NULL = Administrador Central, alcance global (RF-C-4). */
+    /** NULL solo para superadmin (alcance global, RF-C-4). El resto va anclado
+     * a una sucursal, incluido el administrador (gerente de esa sucursal). */
     sucursalId: uuid('sucursal_id').references(() => sucursal.id),
     nombre: text('nombre').notNull(),
     rol: rolUsuario('rol').notNull(),
-    /** Solo administrador (RF-A-1). */
+    /** superadmin y administrador (RF-A-1). */
     email: text('email').unique(),
-    /** Argon2id (RS-A-1). Solo administrador. */
+    /** Argon2id (RS-A-1). superadmin y administrador. */
     passwordHash: text('password_hash'),
     /** Argon2id (RS-A-1). Mesero y cocina (RF-A-2). */
     pinHash: text('pin_hash'),
@@ -44,15 +48,17 @@ export const usuario = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
+    // superadmin es el único global; administrador/cocina/mesero van a una sucursal.
     check(
-      'admin_sin_sucursal',
-      sql`(${t.rol} = 'administrador' AND ${t.sucursalId} IS NULL)
-       OR (${t.rol} <> 'administrador' AND ${t.sucursalId} IS NOT NULL)`,
+      'rol_scope',
+      sql`(${t.rol} = 'superadmin' AND ${t.sucursalId} IS NULL)
+       OR (${t.rol} <> 'superadmin' AND ${t.sucursalId} IS NOT NULL)`,
     ),
+    // superadmin/administrador entran con email+contraseña; cocina/mesero con PIN.
     check(
-      'admin_usa_email',
-      sql`(${t.rol} = 'administrador' AND ${t.email} IS NOT NULL AND ${t.passwordHash} IS NOT NULL)
-       OR (${t.rol} <> 'administrador' AND ${t.pinHash} IS NOT NULL)`,
+      'rol_credencial',
+      sql`(${t.rol} IN ('superadmin', 'administrador') AND ${t.email} IS NOT NULL AND ${t.passwordHash} IS NOT NULL)
+       OR (${t.rol} IN ('cocina', 'mesero') AND ${t.pinHash} IS NOT NULL)`,
     ),
   ],
 );

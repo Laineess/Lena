@@ -52,8 +52,7 @@ describe('login admin', () => {
 
 describe('login PIN', () => {
   const bueno = () => ({
-    dispositivoId: ID.tabletA,
-    tokenDispositivo: CRED.tokenTabletA,
+    claveSucursal: CRED.claveSucursal,
     usuarioId: ID.mesero1,
     pin: CRED.pinMesero,
   });
@@ -65,9 +64,16 @@ describe('login PIN', () => {
     expect((r.body.sesion as { sucursalId: string }).sucursalId).toBe(ID.sucursal);
   });
 
-  it('un dispositivo sin credencial válida no entra (RS-A-3)', async () => {
-    const r = await post('/auth/login/pin', { ...bueno(), tokenDispositivo: 'token-falso' });
+  it('una clave de sucursal inválida no entra (RS-A-3)', async () => {
+    const r = await post('/auth/login/pin', { ...bueno(), claveSucursal: 'CLAVE-INEXISTENTE' });
     expect(r.code).toBe(401);
+  });
+
+  it('la clave de sucursal resuelve a sus usuarios (paso 1)', async () => {
+    const r = await post('/auth/sucursal', { clave: CRED.claveSucursal });
+    expect(r.code).toBe(200);
+    expect((r.body.usuarios as { rol: string }[]).every((u) => u.rol !== 'administrador')).toBe(true);
+    expect((r.body.usuarios as unknown[]).length).toBeGreaterThan(0);
   });
 
   it('PIN incorrecto niega', async () => {
@@ -89,8 +95,7 @@ describe('login PIN', () => {
 describe('refresh', () => {
   it('rota el token y detecta el reuso del viejo', async () => {
     const login = await post('/auth/login/pin', {
-      dispositivoId: ID.tabletA,
-      tokenDispositivo: CRED.tokenTabletA,
+      claveSucursal: CRED.claveSucursal,
       usuarioId: ID.mesero1,
       pin: CRED.pinMesero,
     });
@@ -116,8 +121,7 @@ describe('refresh', () => {
 describe('revocación de dispositivo', () => {
   it('un dispositivo revocado pierde acceso al refrescar', async () => {
     const login = await post('/auth/login/pin', {
-      dispositivoId: ID.tabletA,
-      tokenDispositivo: CRED.tokenTabletA,
+      claveSucursal: CRED.claveSucursal,
       usuarioId: ID.mesero1,
       pin: CRED.pinMesero,
     });
@@ -156,8 +160,7 @@ describe('rate limiting', () => {
 describe('aislamiento de sucursal', () => {
   it('un mesero no puede empujar un evento de otra sucursal', async () => {
     const login = await post('/auth/login/pin', {
-      dispositivoId: ID.tabletA,
-      tokenDispositivo: CRED.tokenTabletA,
+      claveSucursal: CRED.claveSucursal,
       usuarioId: ID.mesero1,
       pin: CRED.pinMesero,
     });

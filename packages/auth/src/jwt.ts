@@ -1,12 +1,13 @@
 // JWT de acceso, vida corta (RS-A-7: 15 min). Firmado HS256.
 import { SignJWT, jwtVerify } from 'jose';
 
-export type Rol = 'administrador' | 'cocina' | 'mesero';
+export type Rol = 'superadmin' | 'administrador' | 'cocina' | 'mesero';
 
 export interface Sesion {
   usuarioId: string;
   rol: Rol;
-  // null solo para el administrador central (alcance global, RF-C-4).
+  // null solo para el superadmin (alcance global, RF-C-4). El administrador
+  // ahora va anclado a su sucursal.
   sucursalId: string | null;
   // El admin puede entrar sin dispositivo registrado; mesero/cocina no.
   dispositivoId: string | null;

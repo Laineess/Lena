@@ -29,6 +29,7 @@ interface Props {
   motor: Motor;
   enLinea: boolean;
   onSincronizar: () => void;
+  onSalir: () => void;
 }
 
 interface Cancelada {
@@ -37,7 +38,7 @@ interface Cancelada {
   motivo: string;
 }
 
-export function Cocina({ sesion, catalogo, motor, enLinea, onSincronizar }: Props) {
+export function Cocina({ sesion, catalogo, motor, enLinea, onSincronizar, onSalir }: Props) {
   const disp = configDispositivo();
   const mesas = useMemo(() => new Map(catalogo.mesas.map((m) => [m.id, m.nombre])), [catalogo.mesas]);
   // Cocina no tiene folio (lo asigna el servidor, no viaja en el log) ni el
@@ -176,6 +177,16 @@ export function Cocina({ sesion, catalogo, motor, enLinea, onSincronizar }: Prop
             className="text-lg"
           >
             🔊
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              if (confirm('¿Cerrar sesión y cambiar de usuario?')) onSalir();
+            }}
+            aria-label="cerrar sesión"
+            className="rounded-md px-2 py-1 font-semibold text-piedra-400"
+          >
+            Salir
           </button>
         </div>
       </header>

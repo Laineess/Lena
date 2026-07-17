@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Comanda } from '@lena/shared';
 import { obtenerCatalogo } from './dominio/api';
 import type { Catalogo, DatosSesion } from './dominio/api';
-import { crearMotor, fijarToken, reanudar, tokenAcceso } from './dominio/motor';
+import { cerrarSesion, crearMotor, fijarToken, reanudar, tokenAcceso } from './dominio/motor';
 import type { Motor } from './dominio/motor';
 import { AdminEscritorio } from './pantallas/AdminEscritorio';
 import { Captura } from './pantallas/Captura';
@@ -10,15 +10,13 @@ import { Cobro } from './pantallas/Cobro';
 import { Cocina } from './pantallas/Cocina';
 import { Comandas } from './pantallas/Comandas';
 import { Ingreso } from './pantallas/Ingreso';
-import { Turno } from './pantallas/Turno';
 
 type Estado = 'cargando' | 'ingreso' | 'captura' | 'admin';
 type Vista =
   | { v: 'captura' }
   | { v: 'comandas' }
   | { v: 'adicion'; comandaId: string; etiqueta: string }
-  | { v: 'cobro'; comanda: Comanda }
-  | { v: 'turno' };
+  | { v: 'cobro'; comanda: Comanda };
 
 export function App() {
   const [estado, setEstado] = useState<Estado>('cargando');
@@ -31,8 +29,9 @@ export function App() {
 
   const entrar = useCallback(async (datos: DatosSesion) => {
     setSesion(datos);
-    // El admin va al escritorio: sin sync, sin catálogo local (RF-C-4).
-    if (datos.sesion.rol === 'administrador') {
+    // El gestor (superadmin/administrador) va al escritorio: sin sync, sin
+    // catálogo local (RF-C-4).
+    if (datos.sesion.rol === 'administrador' || datos.sesion.rol === 'superadmin') {
       fijarToken(datos);
       setEstado('admin');
       return;
@@ -50,6 +49,17 @@ export function App() {
       else setEstado('ingreso');
     });
   }, [entrar]);
+
+  // Cerrar sesión: limpia token + refresh y vuelve al ingreso. Los eventos aún
+  // sin sincronizar quedan en Dexie (son del dispositivo) y reanudan al reentrar.
+  const salir = useCallback(() => {
+    cerrarSesion();
+    motorRef.current = null;
+    setCatalogo(null);
+    setSesion(null);
+    setVista({ v: 'captura' });
+    setEstado('ingreso');
+  }, []);
 
   // Sincroniza al vuelo: al recuperar red y cada 15 s.
   const sincronizar = useCallback(async () => {
@@ -81,13 +91,7 @@ export function App() {
   // El admin: escritorio, sin motor ni catálogo local.
   if (estado === 'admin' && sesion) {
     return (
-      <AdminEscritorio
-        token={sesion.acceso}
-        onSalir={() => {
-          setSesion(null);
-          setEstado('ingreso');
-        }}
-      />
+      <AdminEscritorio token={sesion.acceso} rol={sesion.sesion.rol} onSalir={salir} />
     );
   }
   if (estado === 'ingreso' || !sesion || !catalogo) {
@@ -106,6 +110,7 @@ export function App() {
         motor={motor}
         enLinea={enLineaReal}
         onSincronizar={() => void sincronizar()}
+        onSalir={salir}
       />
     );
   }
@@ -137,10 +142,6 @@ export function App() {
     );
   }
 
-  if (vista.v === 'turno') {
-    return <Turno token={sesion.acceso} onVolver={() => setVista({ v: 'captura' })} />;
-  }
-
   return (
     <Captura
       sesion={sesion}
@@ -150,7 +151,7 @@ export function App() {
       pendientes={pendientes}
       onSincronizar={() => void sincronizar()}
       onVerComandas={() => setVista({ v: 'comandas' })}
-      onVerTurno={() => setVista({ v: 'turno' })}
+      onSalir={salir}
       {...(vista.v === 'adicion'
         ? {
             adicion: { comandaId: vista.comandaId, etiqueta: vista.etiqueta },

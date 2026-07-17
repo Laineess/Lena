@@ -3,9 +3,9 @@ import type { ButtonHTMLAttributes } from 'react';
 type Variante = 'primario' | 'suave' | 'peligro';
 
 const CLASES: Record<Variante, string> = {
-  primario: 'bg-brasa-700 text-white active:bg-brasa-800 disabled:bg-piedra-300',
-  suave: 'bg-piedra-100 text-piedra-900 active:bg-piedra-200 disabled:text-piedra-400',
-  peligro: 'bg-error text-white active:opacity-90',
+  primario: 'bg-rojo-600 text-white active:bg-rojo-500 disabled:bg-carbon-700 disabled:text-piedra-500',
+  suave: 'bg-carbon-800 text-piedra-100 active:bg-carbon-700 disabled:text-piedra-500',
+  peligro: 'bg-rojo-700 text-white active:opacity-90',
 };
 
 export function Boton({

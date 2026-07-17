@@ -1,27 +1,19 @@
-// Configuración del dispositivo. En producción la deja el registro (RS-A-9);
-// en desarrollo hay un valor por defecto que coincide con el seed (Tablet A).
+// La única config local del "lugar" es la LETRA para el voceo (A-1, B-3…,
+// 09 §4.2), que también hace de nodo del reloj HLC. La autenticación ahora va
+// por clave de sucursal (el servidor asigna el dispositivo), así que ya no se
+// guardan id ni token en el cliente.
 export interface ConfigDispositivo {
-  dispositivoId: string;
-  tokenDispositivo: string;
-  letra: string; // para el identificador que se vocea: A-1, A-2… (09 §4.2)
+  letra: string;
 }
 
-const CLAVE = 'lena.dispositivo';
-
-const DEV: ConfigDispositivo = {
-  dispositivoId: '01930000-0000-7000-8000-000000000020',
-  tokenDispositivo: 'token-de-prueba-tableta-a',
-  letra: 'A',
-};
+const CLAVE = 'lena.letra';
 
 export function configDispositivo(): ConfigDispositivo {
-  const raw = localStorage.getItem(CLAVE);
-  if (raw) return JSON.parse(raw) as ConfigDispositivo;
-  return DEV;
+  return { letra: localStorage.getItem(CLAVE) ?? 'A' };
 }
 
-export function guardarConfigDispositivo(c: ConfigDispositivo): void {
-  localStorage.setItem(CLAVE, JSON.stringify(c));
+export function guardarLetra(letra: string): void {
+  localStorage.setItem(CLAVE, letra);
 }
 
 // Consecutivo local para el identificador que se vocea. Nunca cambia al

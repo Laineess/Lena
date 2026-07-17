@@ -2,8 +2,11 @@ import { pgEnum } from 'drizzle-orm/pg-core';
 
 // ── Organización ─────────────────────────────────────────────
 
-/** Visión §3. */
-export const rolUsuario = pgEnum('rol_usuario', ['administrador', 'cocina', 'mesero']);
+/**
+ * Visión §3. `superadmin` = dueño: alcance global, gestiona sucursales y crea
+ * administradores. `administrador` = gerente de UNA sucursal. Ver 07 §roles.
+ */
+export const rolUsuario = pgEnum('rol_usuario', ['superadmin', 'administrador', 'cocina', 'mesero']);
 
 // ── Comandas ─────────────────────────────────────────────────
 

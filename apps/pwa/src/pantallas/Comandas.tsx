@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { calcularMermaSiSeCancela, formatearMoneda } from '@lena/shared';
 import type { Comanda } from '@lena/shared';
 import { Boton } from '../ui/Boton';
-import { obtenerHistorial } from '../dominio/api';
+import { obtenerHistorial, rolEvento } from '../dominio/api';
 import type { ComandaHistorial, DatosSesion } from '../dominio/api';
 import { comandasAbiertas } from '../dominio/comandas';
 import { hlcMaximo } from '../dominio/cocina';
@@ -45,7 +45,7 @@ export function Comandas({ sesion, motor, token, onCobrar, onAgregar, onVolver }
         actorId: sesion.sesion.usuarioId,
         dispositivoId: sesion.sesion.dispositivoId as string,
         nodo: disp.letra,
-        rol: sesion.sesion.rol,
+        rol: rolEvento(sesion.sesion.rol),
       }),
     [sesion, disp.letra],
   );
@@ -78,13 +78,13 @@ export function Comandas({ sesion, motor, token, onCobrar, onAgregar, onVolver }
 
   // Diálogo de cancelación con advertencia de merma (RF-E-18).
   if (cancelar) {
-    const merma = calcularMermaSiSeCancela(cancelar, sesion.sesion.rol);
+    const merma = calcularMermaSiSeCancela(cancelar, rolEvento(sesion.sesion.rol));
     return (
       <div className="flex h-full flex-col p-4">
         <h2 className="mb-3 text-h2 font-semibold">⚠️ Cancelar {etiquetaDe(cancelar)}</h2>
         {merma.lineas.length > 0 ? (
           <>
-            <p className="mb-2 text-piedra-600">Estos platillos YA ESTÁN EN COCINA:</p>
+            <p className="mb-2 text-piedra-300">Estos platillos YA ESTÁN EN COCINA:</p>
             <ul className="mb-3">
               {merma.lineas.map((l) => (
                 <li key={l.detalleId} className="flex justify-between py-1">
@@ -101,13 +101,13 @@ export function Comandas({ sesion, motor, token, onCobrar, onAgregar, onVolver }
             </div>
           </>
         ) : (
-          <p className="mb-4 text-piedra-600">Nada se envió a cocina; no hay merma.</p>
+          <p className="mb-4 text-piedra-300">Nada se envió a cocina; no hay merma.</p>
         )}
-        <label className="text-label text-piedra-600">Motivo *</label>
+        <label className="text-label text-piedra-300">Motivo *</label>
         <input
           value={motivo}
           onChange={(e) => setMotivo(e.target.value)}
-          className="mb-4 rounded-md border border-piedra-300 px-3 py-2"
+          className="mb-4 rounded-md border border-carbon-600 px-3 py-2"
           autoFocus
         />
         <div className="mt-auto flex gap-3">
@@ -135,8 +135,8 @@ export function Comandas({ sesion, motor, token, onCobrar, onAgregar, onVolver }
 
   return (
     <div className="flex h-full flex-col">
-      <header className="flex items-center justify-between border-b border-piedra-200 px-4 py-3">
-        <button type="button" onClick={onVolver} className="font-semibold text-piedra-600">
+      <header className="flex items-center justify-between border-b border-carbon-700 px-4 py-3">
+        <button type="button" onClick={onVolver} className="font-semibold text-piedra-300">
           ‹ Captura
         </button>
         <h2 className="text-h2 font-semibold">Comandas</h2>
@@ -144,17 +144,17 @@ export function Comandas({ sesion, motor, token, onCobrar, onAgregar, onVolver }
       </header>
 
       <div className="flex-1 overflow-y-auto">
-        <h3 className="px-4 pt-3 text-label font-semibold uppercase text-piedra-500">Abiertas</h3>
+        <h3 className="px-4 pt-3 text-label font-semibold uppercase text-piedra-400">Abiertas</h3>
         {abiertas.length === 0 && <p className="px-4 py-2 text-piedra-400">Ninguna abierta</p>}
         <ul>
           {abiertas.map((c) => {
             const cobrable = c.estado === 'lista' || c.estado === 'entregada';
             return (
-              <li key={c.id} className="border-b border-piedra-100 px-4 py-3">
+              <li key={c.id} className="border-b border-carbon-800 px-4 py-3">
                 <div className="flex items-center justify-between">
                   <span>
-                    <span className="text-body-lg font-semibold text-brasa-700 tabular-nums">{etiquetaDe(c)}</span>
-                    <span className="ml-2 text-sm text-piedra-500">{NOMBRE_ESTADO[c.estado] ?? c.estado}</span>
+                    <span className="text-body-lg font-semibold text-oro-400 tabular-nums">{etiquetaDe(c)}</span>
+                    <span className="ml-2 text-sm text-piedra-400">{NOMBRE_ESTADO[c.estado] ?? c.estado}</span>
                   </span>
                   <span className="font-medium tabular-nums">{formatearMoneda(c.total)}</span>
                 </div>
@@ -178,15 +178,15 @@ export function Comandas({ sesion, motor, token, onCobrar, onAgregar, onVolver }
           })}
         </ul>
 
-        <h3 className="px-4 pt-4 text-label font-semibold uppercase text-piedra-500">Historial</h3>
+        <h3 className="px-4 pt-4 text-label font-semibold uppercase text-piedra-400">Historial</h3>
         {historial === null && <p className="px-4 py-2 text-piedra-400">Cargando…</p>}
         {historial?.length === 0 && <p className="px-4 py-2 text-piedra-400">Sin comandas cerradas</p>}
         <ul>
           {(historial ?? []).map((c) => (
-            <li key={c.id} className="flex items-center justify-between border-b border-piedra-100 px-4 py-3">
+            <li key={c.id} className="flex items-center justify-between border-b border-carbon-800 px-4 py-3">
               <span>
                 <span className="font-semibold tabular-nums">{c.folio ? `#${c.folio}` : '—'}</span>
-                <span className="ml-2 text-sm text-piedra-500">{NOMBRE_ESTADO[c.estado] ?? c.estado}</span>
+                <span className="ml-2 text-sm text-piedra-400">{NOMBRE_ESTADO[c.estado] ?? c.estado}</span>
               </span>
               <span className="font-medium tabular-nums">{formatearMoneda(c.total)}</span>
             </li>

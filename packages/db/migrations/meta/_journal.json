@@ -43,6 +43,20 @@
       "when": 1784228127453,
       "tag": "0005_umbrales_cocina",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1784300000000,
+      "tag": "0006_superadmin_por_sucursal",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1784390000000,
+      "tag": "0007_clave_sucursal",
+      "breakpoints": true
     }
   ]
 }

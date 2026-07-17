@@ -7,6 +7,7 @@ import type { Domicilio as DatosDomicilio, TipoServicio } from '@lena/shared';
 import { Boton } from '../ui/Boton';
 import { EstadoSync } from '../ui/EstadoSync';
 import { Stepper } from '../ui/Stepper';
+import { rolEvento } from '../dominio/api';
 import type { Catalogo, DatosSesion, ProductoCat } from '../dominio/api';
 import { hlcMaximo } from '../dominio/cocina';
 import { asignarVoceo, configDispositivo } from '../dominio/dispositivo';
@@ -23,7 +24,7 @@ interface Props {
   pendientes: number;
   onSincronizar: () => void;
   onVerComandas: () => void;
-  onVerTurno: () => void;
+  onSalir: () => void;
   // Modo adición (RF-E-7): agrega a una comanda existente en vez de crear una.
   adicion?: { comandaId: string; etiqueta: string };
   onListo?: () => void;
@@ -37,7 +38,7 @@ export function Captura({
   pendientes,
   onSincronizar,
   onVerComandas,
-  onVerTurno,
+  onSalir,
   adicion,
   onListo,
 }: Props) {
@@ -49,7 +50,7 @@ export function Captura({
         actorId: sesion.sesion.usuarioId,
         dispositivoId: sesion.sesion.dispositivoId as string,
         nodo: disp.letra,
-        rol: sesion.sesion.rol,
+        rol: rolEvento(sesion.sesion.rol),
       }),
     [sesion, disp.letra],
   );
@@ -151,12 +152,12 @@ export function Captura({
   if (confirmacion) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-6 p-6 text-center">
-        <p className="text-h2 uppercase tracking-wide text-piedra-500">
+        <p className="text-h2 uppercase tracking-wide text-piedra-400">
           {tipo === 'para_llevar' ? 'Para llevar' : tipo === 'mesa' ? 'En mesa' : 'Domicilio'}
         </p>
         {/* El ID que se vocea: nunca cambia al sincronizar (09 §4.2). */}
-        <p className="text-[72px] font-bold leading-none text-brasa-700 tabular-nums">{confirmacion.voceo}</p>
-        <p className="text-piedra-500">Comanda enviada a cocina</p>
+        <p className="text-[72px] font-bold leading-none text-oro-400 tabular-nums">{confirmacion.voceo}</p>
+        <p className="text-piedra-400">Comanda enviada a cocina</p>
         <Boton onClick={() => setConfirmacion(null)} className="mt-4 h-14 w-full max-w-xs">
           Nueva comanda
         </Boton>
@@ -166,9 +167,9 @@ export function Captura({
 
   return (
     <div className="flex h-full flex-col">
-      <header className="flex items-center justify-between border-b border-piedra-200 px-4 py-2">
+      <header className="flex items-center justify-between border-b border-carbon-700 px-4 py-2">
         {adicion ? (
-          <button type="button" onClick={onListo} className="font-semibold text-piedra-600">
+          <button type="button" onClick={onListo} className="font-semibold text-piedra-300">
             ‹ Agregar a {adicion.etiqueta}
           </button>
         ) : (
@@ -176,7 +177,7 @@ export function Captura({
             <select
               value={tipo}
               onChange={(e) => elegirTipo(e.target.value as TipoServicio)}
-              className="rounded-md bg-piedra-100 px-2 py-1 font-semibold"
+              className="rounded-md bg-carbon-800 px-2 py-1 font-semibold"
             >
               <option value="para_llevar">Para llevar</option>
               <option value="mesa">Mesa</option>
@@ -186,7 +187,7 @@ export function Captura({
               <select
                 value={mesaId ?? ''}
                 onChange={(e) => setMesaId(e.target.value || null)}
-                className="rounded-md bg-piedra-100 px-2 py-1"
+                className="rounded-md bg-carbon-800 px-2 py-1"
               >
                 <option value="">Mesa…</option>
                 {catalogo.mesas.map((m) => (
@@ -204,23 +205,30 @@ export function Captura({
           </div>
         )}
         <div className="flex items-center gap-3">
-          <button type="button" onClick={onVerTurno} aria-label="turno de caja" className="text-xl">
-            💵
-          </button>
           <button type="button" onClick={onVerComandas} aria-label="ver comandas" className="text-xl">
             ☰
           </button>
           <EstadoSync enLinea={enLinea} pendientes={pendientes} />
+          <button
+            type="button"
+            onClick={() => {
+              if (confirm('¿Cerrar sesión y cambiar de usuario?')) onSalir();
+            }}
+            aria-label="cerrar sesión"
+            className="rounded-md px-2 py-1 text-sm font-semibold text-piedra-400"
+          >
+            Salir
+          </button>
         </div>
       </header>
 
-      <nav className="flex gap-2 overflow-x-auto border-b border-piedra-200 px-4 py-2">
+      <nav className="flex gap-2 overflow-x-auto border-b border-carbon-700 px-4 py-2">
         {catalogo.categorias.map((c) => (
           <button
             key={c.id}
             type="button"
             onClick={() => setCatActiva(c.id)}
-            className={`whitespace-nowrap rounded-md px-3 py-1 font-semibold ${c.id === catActiva ? 'bg-brasa-100 text-brasa-800' : 'text-piedra-500'}`}
+            className={`whitespace-nowrap rounded-md px-3 py-1 font-semibold ${c.id === catActiva ? 'bg-carbon-800 text-oro-300' : 'text-piedra-400'}`}
           >
             {c.nombre}
           </button>
@@ -231,10 +239,10 @@ export function Captura({
         {lista.map((p) => {
           const cant = borrador.get(p.id) ?? 0;
           return (
-            <li key={p.id} className="flex items-center justify-between border-b border-piedra-100 px-4 py-2">
+            <li key={p.id} className="flex items-center justify-between border-b border-carbon-800 px-4 py-2">
               <div className={p.disponible ? '' : 'text-piedra-400 line-through'}>
                 <span className="text-body-lg font-medium">{p.nombre}</span>
-                <span className="ml-2 text-piedra-500 tabular-nums">{formatearMoneda(p.precio)}</span>
+                <span className="ml-2 text-piedra-400 tabular-nums">{formatearMoneda(p.precio)}</span>
               </div>
               {p.disponible ? (
                 <Stepper cantidad={cant} onCambio={(n) => cambiar(p.id, n)} />
@@ -246,9 +254,9 @@ export function Captura({
         })}
       </ul>
 
-      <footer className="border-t border-piedra-200 p-3">
+      <footer className="border-t border-carbon-700 p-3">
         <div className="mb-2 flex items-center justify-between px-1">
-          <span className="text-piedra-500">
+          <span className="text-piedra-400">
             {cantidadTotal} {cantidadTotal === 1 ? 'producto' : 'productos'}
           </span>
           <span className="text-h2 font-bold tabular-nums">{formatearMoneda(total)}</span>

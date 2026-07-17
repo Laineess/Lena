@@ -85,24 +85,24 @@ describe('PATCH /productos/:id/disponibilidad (RF-F-10)', () => {
   });
 });
 
-describe('POST /auth/dispositivo/usuarios', () => {
-  it('con la credencial del dispositivo devuelve sus usuarios, sin admin', async () => {
+describe('POST /auth/sucursal (clave)', () => {
+  it('con la clave devuelve sus usuarios de PIN, sin admin', async () => {
     const r = await srv.app.inject({
       method: 'POST',
-      url: '/auth/dispositivo/usuarios',
-      payload: { dispositivoId: sesionMesero().dispositivoId, tokenDispositivo: CRED.tokenTabletA },
+      url: '/auth/sucursal',
+      payload: { clave: CRED.claveSucursal },
     });
     expect(r.statusCode).toBe(200);
     const body = r.json() as { usuarios: { rol: string }[] };
     expect(body.usuarios.length).toBeGreaterThan(0);
-    expect(body.usuarios.every((u) => u.rol !== 'administrador')).toBe(true);
+    expect(body.usuarios.every((u) => u.rol !== 'administrador' && u.rol !== 'superadmin')).toBe(true);
   });
 
-  it('con credencial falsa niega (401)', async () => {
+  it('con clave inválida niega (401)', async () => {
     const r = await srv.app.inject({
       method: 'POST',
-      url: '/auth/dispositivo/usuarios',
-      payload: { dispositivoId: sesionMesero().dispositivoId, tokenDispositivo: 'falso' },
+      url: '/auth/sucursal',
+      payload: { clave: 'NO-EXISTE' },
     });
     expect(r.statusCode).toBe(401);
   });
