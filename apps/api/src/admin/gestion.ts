@@ -42,12 +42,26 @@ async function generarClave(db: Db, nombre: string): Promise<string> {
   return `${base}-${randomUUID().replace(/-/g, '').slice(0, 8).toUpperCase()}`;
 }
 
+// La categoría se escribe por nombre al dar de alta un producto (RF-D-6): si no
+// existe, se crea. Así el admin arma su propia organización sin un CRUD aparte.
+async function idDeCategoria(db: Db, nombre: string): Promise<string> {
+  const n = nombre.trim();
+  const [ex] = await db.select({ id: categoria.id }).from(categoria).where(eq(categoria.nombre, n)).limit(1);
+  if (ex) return ex.id;
+  const [nueva] = await db
+    .insert(categoria)
+    .values({ id: randomUUID(), nombre: n, orden: 99 })
+    .returning({ id: categoria.id });
+  return nueva?.id as string;
+}
+
 export function registrarRutasGestion(app: FastifyInstance, db: Db): void {
-  // ── Productos (RF-D-1/2/5) ──
+  // ── Productos (RF-D-1/2/5/6) ──
   app.post('/admin/productos', soloAdmin, async (req, reply) => {
     const p = z
       .object({
-        categoriaId: z.string().uuid(),
+        categoria: z.string().trim().min(1),
+        subcategoria: z.string().trim().optional(),
         nombre: z.string().trim().min(1),
         descripcion: z.string().trim().optional(),
         precio: centavos,
@@ -58,9 +72,10 @@ export function registrarRutasGestion(app: FastifyInstance, db: Db): void {
       .insert(producto)
       .values({
         id: randomUUID(),
-        categoriaId: p.data.categoriaId,
+        categoriaId: await idDeCategoria(db, p.data.categoria),
         nombre: p.data.nombre,
         descripcion: p.data.descripcion ?? null,
+        subcategoria: p.data.subcategoria ?? null,
         precioBase: aPesos(p.data.precio),
       })
       .returning({ id: producto.id });
@@ -72,7 +87,8 @@ export function registrarRutasGestion(app: FastifyInstance, db: Db): void {
       .object({
         nombre: z.string().trim().min(1).optional(),
         descripcion: z.string().trim().optional(),
-        categoriaId: z.string().uuid().optional(),
+        categoria: z.string().trim().min(1).optional(),
+        subcategoria: z.string().trim().optional(),
         activo: z.boolean().optional(),
       })
       .safeParse(req.body);
@@ -82,7 +98,8 @@ export function registrarRutasGestion(app: FastifyInstance, db: Db): void {
       .set({
         ...(p.data.nombre !== undefined ? { nombre: p.data.nombre } : {}),
         ...(p.data.descripcion !== undefined ? { descripcion: p.data.descripcion } : {}),
-        ...(p.data.categoriaId !== undefined ? { categoriaId: p.data.categoriaId } : {}),
+        ...(p.data.categoria !== undefined ? { categoriaId: await idDeCategoria(db, p.data.categoria) } : {}),
+        ...(p.data.subcategoria !== undefined ? { subcategoria: p.data.subcategoria || null } : {}),
         ...(p.data.activo !== undefined ? { activo: p.data.activo } : {}),
         updatedAt: new Date(),
       })
@@ -151,9 +168,10 @@ export function registrarRutasGestion(app: FastifyInstance, db: Db): void {
   });
 
   // ── Usuarios (RF-C-1/2/3) ──
-  // El administrador ve solo los de su sucursal; el superadmin, todos.
+  // El administrador ve solo los de su sucursal; el superadmin, todos (o los de
+  // la sucursal que filtre con ?sucursalId).
   app.get('/admin/usuarios', soloAdmin, async (req) => {
-    const suc = sucursalScope(req);
+    const suc = sucursalScope(req, (req.query as { sucursalId?: string })?.sucursalId);
     return db
       .select({
         id: usuario.id,
@@ -277,19 +295,33 @@ export function registrarRutasGestion(app: FastifyInstance, db: Db): void {
     return { id: s?.id, clave: s?.clave };
   });
 
+  // El superadmin puede cambiar la CLAVE de una sucursal (seguridad): al
+  // rotarla, quien tenía la vieja ya no entra. Se normaliza a mayúsculas y debe
+  // ser única.
   app.patch<{ Params: { id: string } }>('/admin/sucursales/:id', soloSuper, async (req, reply) => {
     const p = z
       .object({
         nombre: z.string().trim().min(1).optional(),
         direccion: z.string().trim().optional(),
+        clave: z.string().trim().min(3).max(24).optional(),
         activo: z.boolean().optional(),
       })
       .safeParse(req.body);
     if (!p.success) return reply.code(400).send({ error: 'peticion_invalida' });
-    await db
-      .update(sucursal)
-      .set({ ...p.data, updatedAt: new Date() })
-      .where(eq(sucursal.id, req.params.id));
+    try {
+      await db
+        .update(sucursal)
+        .set({
+          ...(p.data.nombre !== undefined ? { nombre: p.data.nombre } : {}),
+          ...(p.data.direccion !== undefined ? { direccion: p.data.direccion } : {}),
+          ...(p.data.clave !== undefined ? { clave: p.data.clave.toUpperCase().replace(/\s+/g, '') } : {}),
+          ...(p.data.activo !== undefined ? { activo: p.data.activo } : {}),
+          updatedAt: new Date(),
+        })
+        .where(eq(sucursal.id, req.params.id));
+    } catch {
+      return reply.code(409).send({ error: 'clave_en_uso' });
+    }
     return { ok: true };
   });
 

@@ -21,6 +21,7 @@ export interface Usuario {
 export interface ProductoCat {
   id: string;
   categoriaId: string;
+  subcategoria: string | null;
   nombre: string;
   precio: number; // centavos
   disponible: boolean;
@@ -90,8 +91,12 @@ export function refrescar(refresh: string) {
   return postJson<DatosSesion>('/auth/refresh', { refresh });
 }
 
-export async function obtenerCatalogo(token: string): Promise<Catalogo> {
-  const res = await fetch('/catalogo', { headers: { authorization: `Bearer ${token}` } });
+// sucursalId solo lo usa el superadmin (panel de productos) para ver la
+// disponibilidad de una sucursal concreta; el mesero/cocina no lo manda.
+export async function obtenerCatalogo(token: string, sucursalId?: string): Promise<Catalogo> {
+  const res = await fetch(`/catalogo${sucursalId ? `?sucursalId=${sucursalId}` : ''}`, {
+    headers: { authorization: `Bearer ${token}` },
+  });
   if (!res.ok) throw new ErrorApi(res.status, {});
   return res.json() as Promise<Catalogo>;
 }
@@ -311,11 +316,11 @@ export const admin = {
   ventasPorHora: (t: string, d?: string, h?: string, s?: string) =>
     authGet<{ hora: number; ventas: number; comandas: number }[]>(`/admin/ventas-por-hora${q(d, h, s)}`, t),
   cortes: (t: string, d?: string, h?: string, s?: string) => authGet<Corte[]>(`/admin/cortes${q(d, h, s)}`, t),
-  caja: (t: string) => authGet<CajaDia[]>('/admin/caja', t),
-  comandasDia: (t: string) => authGet<ComandaDia[]>('/admin/comandas-dia', t),
+  caja: (t: string, s?: string) => authGet<CajaDia[]>(`/admin/caja${s ? `?sucursalId=${s}` : ''}`, t),
+  comandasDia: (t: string, s?: string) => authGet<ComandaDia[]>(`/admin/comandas-dia${s ? `?sucursalId=${s}` : ''}`, t),
   comandaDetalle: (t: string, id: string) => authGet<ComandaDetalle>(`/admin/comandas/${id}`, t),
   // Gestión (RF-C/D/I-4)
-  usuarios: (t: string) => authGet<UsuarioAdmin[]>('/admin/usuarios', t),
+  usuarios: (t: string, s?: string) => authGet<UsuarioAdmin[]>(`/admin/usuarios${s ? `?sucursalId=${s}` : ''}`, t),
   crearUsuario: (t: string, u: { nombre: string; rol: string; sucursalId?: string; pin: string }) =>
     authSend<{ id: string }>('POST', '/admin/usuarios', t, u),
   crearAdmin: (t: string, a: { nombre: string; email: string; password: string; sucursalId: string }) =>
@@ -326,6 +331,20 @@ export const admin = {
     authSend<{ ok: boolean }>('PATCH', `/admin/usuarios/${id}/pin`, t, { pin }),
   cambiarPrecio: (t: string, id: string, precio: number) =>
     authSend<{ ok: boolean }>('PATCH', `/admin/productos/${id}/precio`, t, { precio }),
+  crearProducto: (t: string, p: { nombre: string; categoria: string; subcategoria?: string; precio: number }) =>
+    authSend<{ id: string }>('POST', '/admin/productos', t, p),
+  editarProducto: (
+    t: string,
+    id: string,
+    p: { nombre?: string; categoria?: string; subcategoria?: string; activo?: boolean },
+  ) => authSend<{ ok: boolean }>('PATCH', `/admin/productos/${id}`, t, p),
+  eliminarProducto: (t: string, id: string) =>
+    authSend<{ ok: boolean }>('PATCH', `/admin/productos/${id}`, t, { activo: false }),
+  cambiarDisponibilidad: (t: string, id: string, disponible: boolean, sucursalId?: string) =>
+    authSend<{ id: string; disponible: boolean }>('PATCH', `/productos/${id}/disponibilidad`, t, {
+      disponible,
+      ...(sucursalId ? { sucursalId } : {}),
+    }),
   historialPrecios: (t: string, id: string) => authGet<CambioPrecio[]>(`/admin/productos/${id}/precios`, t),
   gastos: (t: string, d?: string, h?: string, s?: string) => authGet<Gasto[]>(`/admin/gastos${q(d, h, s)}`, t),
   crearGasto: (
@@ -335,7 +354,7 @@ export const admin = {
   sucursales: (t: string) => authGet<Sucursal[]>('/admin/sucursales', t),
   crearSucursal: (t: string, s: { nombre: string; direccion?: string }) =>
     authSend<{ id: string; clave: string }>('POST', '/admin/sucursales', t, s),
-  editarSucursal: (t: string, id: string, s: { nombre?: string; direccion?: string; activo?: boolean }) =>
+  editarSucursal: (t: string, id: string, s: { nombre?: string; direccion?: string; clave?: string; activo?: boolean }) =>
     authSend<{ ok: boolean }>('PATCH', `/admin/sucursales/${id}`, t, s),
   dispositivos: (t: string) =>
     authGet<{ id: string; nombre: string; activo: boolean; minutosSinSync: number | null }[]>('/admin/dispositivos', t),

@@ -60,6 +60,8 @@ export function Captura({
   const [domicilio, setDomicilio] = useState<DatosDomicilio | null>(null);
   const [mostrarDomicilio, setMostrarDomicilio] = useState(false);
   const [borrador, setBorrador] = useState<Map<string, number>>(new Map());
+  // Notas por producto (RF-E-9): "sin cebolla", etc. Van a cocina en el evento.
+  const [notas, setNotas] = useState<Record<string, string>>({});
   const [catActiva, setCatActiva] = useState(catalogo.categorias[0]?.id ?? '');
   const [enviando, setEnviando] = useState(false);
   const [confirmacion, setConfirmacion] = useState<{ voceo: string } | null>(null);
@@ -88,12 +90,21 @@ export function Captura({
       else m.set(id, nueva);
       return m;
     });
+    if (nueva <= 0) setNotas((n) => { const c = { ...n }; delete c[id]; return c; });
   }
 
-  const lista = useMemo(() => {
-    const pedidos = catalogo.productos.filter((p) => borrador.has(p.id));
-    const resto = catalogo.productos.filter((p) => !borrador.has(p.id) && p.categoriaId === catActiva);
-    return [...pedidos, ...resto];
+  // Productos ya elegidos (de cualquier categoría), anclados arriba.
+  const pedidos = useMemo(() => catalogo.productos.filter((p) => borrador.has(p.id)), [catalogo.productos, borrador]);
+  // El resto de la categoría activa, agrupado por subcategoría (RF-D-6).
+  const porSub = useMemo(() => {
+    const grupos = new Map<string, ProductoCat[]>();
+    for (const p of catalogo.productos) {
+      if (borrador.has(p.id) || p.categoriaId !== catActiva) continue;
+      const sub = p.subcategoria || '';
+      if (!grupos.has(sub)) grupos.set(sub, []);
+      (grupos.get(sub) as ProductoCat[]).push(p);
+    }
+    return [...grupos.entries()];
   }, [catalogo.productos, borrador, catActiva]);
 
   async function enviar() {
@@ -104,7 +115,8 @@ export function Captura({
     try {
       const lineas: LineaBorrador[] = [...borrador].map(([id, cantidad]) => {
         const p = porId.get(id) as ProductoCat;
-        return { productoId: id, nombreProducto: p.nombre, precioUnitario: p.precio, cantidad };
+        const nota = notas[id]?.trim();
+        return { productoId: id, nombreProducto: p.nombre, precioUnitario: p.precio, cantidad, ...(nota ? { notas: nota } : {}) };
       });
 
       if (adicion) {
@@ -126,6 +138,7 @@ export function Captura({
       const voceo = asignarVoceo(comandaId, disp.letra);
       setConfirmacion({ voceo });
       setBorrador(new Map());
+      setNotas({});
       setDomicilio(null);
       setTipo('para_llevar');
       onSincronizar();
@@ -235,24 +248,57 @@ export function Captura({
         ))}
       </nav>
 
-      <ul className="flex-1 overflow-y-auto">
-        {lista.map((p) => {
-          const cant = borrador.get(p.id) ?? 0;
-          return (
-            <li key={p.id} className="flex items-center justify-between border-b border-carbon-800 px-4 py-2">
-              <div className={p.disponible ? '' : 'text-piedra-400 line-through'}>
-                <span className="text-body-lg font-medium">{p.nombre}</span>
-                <span className="ml-2 text-piedra-400 tabular-nums">{formatearMoneda(p.precio)}</span>
-              </div>
-              {p.disponible ? (
-                <Stepper cantidad={cant} onCambio={(n) => cambiar(p.id, n)} />
-              ) : (
-                <span className="text-sm text-piedra-400">NO DISPONIBLE</span>
+      <div className="flex-1 overflow-y-auto">
+        {/* Tu comanda: lo ya elegido, con campo de nota por producto. */}
+        {pedidos.length > 0 && (
+          <ul className="border-b-4 border-carbon-700 bg-carbon-900">
+            {pedidos.map((p) => (
+              <li key={p.id} className="border-b border-carbon-800 px-4 py-2 last:border-0">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <span className="text-body-lg font-medium">{p.nombre}</span>
+                    <span className="ml-2 text-piedra-400 tabular-nums">{formatearMoneda(p.precio)}</span>
+                  </div>
+                  <Stepper cantidad={borrador.get(p.id) ?? 0} onCambio={(n) => cambiar(p.id, n)} />
+                </div>
+                <input
+                  value={notas[p.id] ?? ''}
+                  onChange={(e) => setNotas((n) => ({ ...n, [p.id]: e.target.value }))}
+                  placeholder="Nota para cocina (ej. sin cebolla)"
+                  maxLength={280}
+                  className="mt-1 w-full rounded-md border border-carbon-600 bg-carbon-800 px-2 py-1 text-sm text-piedra-100 placeholder-piedra-500"
+                />
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {/* Catálogo de la categoría activa, agrupado por subcategoría. */}
+        <ul>
+          {porSub.map(([sub, prods]) => (
+            <li key={sub || 'sin'}>
+              {sub && (
+                <p className="bg-carbon-900 px-4 py-1 text-xs font-bold uppercase tracking-wide text-piedra-500">{sub}</p>
               )}
+              <ul>
+                {prods.map((p) => (
+                  <li key={p.id} className="flex items-center justify-between border-b border-carbon-800 px-4 py-2">
+                    <div className={p.disponible ? '' : 'text-piedra-400 line-through'}>
+                      <span className="text-body-lg font-medium">{p.nombre}</span>
+                      <span className="ml-2 text-piedra-400 tabular-nums">{formatearMoneda(p.precio)}</span>
+                    </div>
+                    {p.disponible ? (
+                      <Stepper cantidad={borrador.get(p.id) ?? 0} onCambio={(n) => cambiar(p.id, n)} />
+                    ) : (
+                      <span className="text-sm text-piedra-400">NO DISPONIBLE</span>
+                    )}
+                  </li>
+                ))}
+              </ul>
             </li>
-          );
-        })}
-      </ul>
+          ))}
+        </ul>
+      </div>
 
       <footer className="border-t border-carbon-700 p-3">
         <div className="mb-2 flex items-center justify-between px-1">

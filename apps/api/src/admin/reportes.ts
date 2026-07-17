@@ -308,7 +308,7 @@ export function registrarRutasAdmin(app: FastifyInstance, db: Db): void {
   // abierto, y cuántas comandas quedan sin cobrar. El turno se abre/cierra en
   // la tablet de la sucursal (la caja es física); aquí el gestor lo observa.
   app.get('/admin/caja', soloAdmin, async (req) => {
-    const suc = sucursalScope(req);
+    const suc = sucursalScope(req, (req.query as { sucursalId?: string })?.sucursalId);
     const hoy = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City' }).format(new Date());
     const filas = (await db.execute(sql`
       SELECT s.id, s.nombre,
@@ -349,7 +349,7 @@ export function registrarRutasAdmin(app: FastifyInstance, db: Db): void {
   // ── Comandas del día (para la Caja del día) ──
   // Lista de hoy por sucursal en alcance; se abre el detalle con /admin/comandas/:id.
   app.get('/admin/comandas-dia', soloAdmin, async (req) => {
-    const suc = sucursalScope(req);
+    const suc = sucursalScope(req, (req.query as { sucursalId?: string })?.sucursalId);
     const hoy = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City' }).format(new Date());
     const filas = (await db.execute(sql`
       SELECT c.id, c.folio, c.tipo_servicio, c.estado, c.total, c.abierta_at, c.cerrada_at,

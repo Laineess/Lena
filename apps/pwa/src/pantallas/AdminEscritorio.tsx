@@ -8,6 +8,7 @@ import { abrirTurno, admin, cerrarTurno, exportarCsv, obtenerCatalogo, turnoActu
 import type {
   CajaDia,
   Cancelada,
+  Catalogo,
   ComandaDetalle,
   ComandaDia,
   Corte,
@@ -77,7 +78,9 @@ export function AdminEscritorio({ token, rol, onSalir }: { token: string; rol: R
     <div className="flex h-full flex-col bg-carbon-950 text-piedra-200">
       {/* Topbar */}
       <header className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-carbon-800 bg-carbon-900 px-4 py-2">
-        <span className="text-h2 font-bold text-oro-400">🔥 Leña</span>
+        <span className="flex items-center gap-2 text-h2 font-bold text-oro-400">
+          <img src="/icon.svg" alt="" className="h-6 w-6 rounded-md" /> Leña
+        </span>
         <span className="hidden text-xs uppercase tracking-wide text-piedra-500 md:inline">
           {esSuper ? 'Dueño' : 'Gerencia'}
         </span>
@@ -119,15 +122,15 @@ export function AdminEscritorio({ token, rol, onSalir }: { token: string; rol: R
 
       <main className="flex-1 overflow-y-auto p-6">
         {seccion === 'inicio' && <PanelInicio {...props} esSuper={esSuper} suPropia={suPropia} />}
-        {seccion === 'caja' && <PanelCaja token={token} />}
+        {seccion === 'caja' && <PanelCaja token={token} sucursal={sucursal} />}
         {seccion === 'merma' && <PanelMerma {...props} />}
         {seccion === 'canceladas' && <PanelCanceladas {...props} />}
         {seccion === 'cortes' && <PanelCortes {...props} />}
-        {seccion === 'productos' && <PanelProductos token={token} />}
-        {seccion === 'usuarios' && <PanelUsuarios token={token} esSuper={esSuper} sucursales={sucursales} />}
+        {seccion === 'productos' && <PanelProductos token={token} esSuper={esSuper} sucursal={sucursal} />}
+        {seccion === 'usuarios' && <PanelUsuarios token={token} esSuper={esSuper} sucursal={sucursal} sucursales={sucursales} />}
         {seccion === 'gastos' && <PanelGastos {...props} sucursales={sucursales} esSuper={esSuper} />}
-        {seccion === 'sucursales' && <PanelSucursales token={token} onCambio={recargarSucursales} />}
-        {seccion === 'admins' && <PanelAdmins token={token} sucursales={sucursales} />}
+        {seccion === 'sucursales' && <PanelSucursales token={token} sucursal={sucursal} onCambio={recargarSucursales} />}
+        {seccion === 'admins' && <PanelAdmins token={token} sucursal={sucursal} sucursales={sucursales} />}
       </main>
 
       <AlertasSync token={token} />
@@ -153,13 +156,10 @@ function PanelInicio({
 }: RangoProps & { esSuper: boolean; suPropia: Sucursal | undefined }) {
   const [r, setR] = useState<Resumen | null>(null);
   const [top, setTop] = useState<MasVendido[]>([]);
-  const [horas, setHoras] = useState<{ hora: number; ventas: number }[]>([]);
   useEffect(() => {
     admin.resumen(token, desde, hasta, sucursal).then(setR).catch(() => setR(null));
     admin.masVendidos(token, desde, hasta, sucursal).then(setTop).catch(() => setTop([]));
-    admin.ventasPorHora(token, desde, hasta, sucursal).then(setHoras).catch(() => setHoras([]));
   }, [token, desde, hasta, sucursal]);
-  const maxHora = Math.max(1, ...horas.map((h) => h.ventas));
 
   return (
     <div>
@@ -172,17 +172,6 @@ function PanelInicio({
         <Kpi titulo="Comandas" valor={String(r?.comandas ?? 0)} />
         <Kpi titulo="Ticket promedio" valor={formatearMoneda(r?.ticket ?? 0)} />
         <Kpi titulo="Merma" valor={formatearMoneda(r?.merma ?? 0)} alerta />
-      </div>
-
-      <h3 className="mb-2 mt-6 text-sm font-bold uppercase tracking-wide text-piedra-500">Ventas por hora</h3>
-      <div className={`flex h-32 items-end gap-1 p-3 ${CARD}`}>
-        {horas.length === 0 && <p className="m-auto text-piedra-500">Sin ventas</p>}
-        {horas.map((h) => (
-          <div key={h.hora} className="flex flex-1 flex-col items-center justify-end">
-            <div className="w-full rounded-t bg-rojo-500" style={{ height: `${(h.ventas / maxHora) * 100}%` }} title={formatearMoneda(h.ventas)} />
-            <span className="mt-1 text-[10px] text-piedra-500 tabular-nums">{h.hora}</span>
-          </div>
-        ))}
       </div>
 
       <h3 className="mb-2 mt-6 text-sm font-bold uppercase tracking-wide text-piedra-500">Más vendidos</h3>
@@ -277,15 +266,15 @@ function TurnoCaja({ token, sucursal }: { token: string; sucursal: Sucursal | un
 }
 
 // ── Caja del día: lista de comandas de hoy + detalle al hacer clic ──
-function PanelCaja({ token }: { token: string }) {
+function PanelCaja({ token, sucursal }: { token: string; sucursal: string }) {
   const [caja, setCaja] = useState<CajaDia[]>([]);
   const [comandas, setComandas] = useState<ComandaDia[]>([]);
   const [detalle, setDetalle] = useState<ComandaDetalle | null>(null);
 
   const cargar = useCallback(() => {
-    admin.caja(token).then(setCaja).catch(() => setCaja([]));
-    admin.comandasDia(token).then(setComandas).catch(() => setComandas([]));
-  }, [token]);
+    admin.caja(token, sucursal).then(setCaja).catch(() => setCaja([]));
+    admin.comandasDia(token, sucursal).then(setComandas).catch(() => setComandas([]));
+  }, [token, sucursal]);
   useEffect(() => {
     cargar();
     const t = setInterval(cargar, 15_000); // se mantiene al día tras cada cobro
@@ -510,64 +499,175 @@ function PanelCortes({ token, desde, hasta, sucursal }: RangoProps) {
   );
 }
 
-function PanelProductos({ token }: { token: string }) {
-  const [productos, setProductos] = useState<ProductoCat[]>([]);
-  const [editando, setEditando] = useState<Record<string, string>>({});
-  const [historial, setHistorial] = useState<{ id: string; filas: { precioAnterior: string; precioNuevo: string; createdAt: string }[] } | null>(null);
-  const cargar = useCallback(async () => setProductos((await obtenerCatalogo(token)).productos), [token]);
+// Productos: menú del negocio (RF-D). Alta/edición/baja + agotado/reactivar,
+// organizado por categoría → subcategoría (texto libre que el admin escribe al
+// dar de alta). Admin y superadmin (el menú es global, RF-D-9).
+function PanelProductos({ token, esSuper, sucursal }: { token: string; esSuper: boolean; sucursal: string }) {
+  const [cat, setCat] = useState<Catalogo | null>(null);
+  const [editPrecio, setEditPrecio] = useState<Record<string, string>>({});
+  const [editId, setEditId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState({ nombre: '', categoria: '', subcategoria: '' });
+  const [nuevo, setNuevo] = useState({ nombre: '', categoria: '', subcategoria: '', precio: '' });
+  const [error, setError] = useState<string | null>(null);
+
+  // El admin ve la disponibilidad de SU sucursal; el superadmin, la de la que
+  // filtre arriba. Sin sucursal elegida (superadmin, "Todas") no se puede
+  // gestionar existencias (son por sucursal).
+  const gestionable = !esSuper || !!sucursal;
+  const cargar = useCallback(
+    async () => setCat(await obtenerCatalogo(token, esSuper ? sucursal || undefined : undefined)),
+    [token, esSuper, sucursal],
+  );
   useEffect(() => { void cargar(); }, [cargar]);
 
+  const catNombre = useMemo(() => new Map((cat?.categorias ?? []).map((c) => [c.id, c.nombre])), [cat]);
+  const listaCategorias = useMemo(() => (cat?.categorias ?? []).map((c) => c.nombre), [cat]);
+  const listaSub = useMemo(
+    () => [...new Set((cat?.productos ?? []).map((p) => p.subcategoria).filter((s): s is string => !!s))],
+    [cat],
+  );
+  // categoriaId → subcategoría → productos.
+  const grupos = useMemo(() => {
+    const m = new Map<string, Map<string, ProductoCat[]>>();
+    for (const p of cat?.productos ?? []) {
+      const sub = p.subcategoria || 'Sin subcategoría';
+      if (!m.has(p.categoriaId)) m.set(p.categoriaId, new Map());
+      const sm = m.get(p.categoriaId) as Map<string, ProductoCat[]>;
+      if (!sm.has(sub)) sm.set(sub, []);
+      (sm.get(sub) as ProductoCat[]).push(p);
+    }
+    return m;
+  }, [cat]);
+
+  async function crear() {
+    setError(null);
+    const precio = Number(nuevo.precio);
+    if (!nuevo.nombre.trim() || !nuevo.categoria.trim() || !(precio > 0)) {
+      setError('Faltan nombre, categoría o precio.');
+      return;
+    }
+    try {
+      await admin.crearProducto(token, {
+        nombre: nuevo.nombre,
+        categoria: nuevo.categoria,
+        precio: Math.round(precio * 100),
+        ...(nuevo.subcategoria.trim() ? { subcategoria: nuevo.subcategoria } : {}),
+      });
+      setNuevo({ nombre: '', categoria: '', subcategoria: '', precio: '' });
+      await cargar();
+    } catch {
+      setError('No se pudo crear.');
+    }
+  }
+
   async function guardarPrecio(id: string) {
-    const pesos = Number(editando[id]);
+    const pesos = Number(editPrecio[id]);
     if (!pesos) return;
     await admin.cambiarPrecio(token, id, Math.round(pesos * 100));
-    setEditando((e) => { const n = { ...e }; delete n[id]; return n; });
+    setEditPrecio((e) => { const n = { ...e }; delete n[id]; return n; });
+    await cargar();
+  }
+  async function guardarEdicion() {
+    if (!editId) return;
+    await admin.editarProducto(token, editId, {
+      nombre: editForm.nombre,
+      categoria: editForm.categoria,
+      subcategoria: editForm.subcategoria,
+    });
+    setEditId(null);
     await cargar();
   }
 
   return (
     <div>
       <h2 className="mb-1 text-h2 font-bold text-piedra-100">Productos</h2>
-      <p className="mb-3 text-sm text-piedra-500">El menú y sus precios son del negocio (aplican a todas las sucursales).</p>
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="border-b border-carbon-700 text-left text-piedra-500"><th className="py-2">Producto</th><th>Precio</th><th>Nuevo precio</th><th></th></tr>
-        </thead>
-        <tbody>
-          {productos.map((p) => (
-            <tr key={p.id} className="border-b border-carbon-800">
-              <td className="py-2 font-bold">{p.nombre}</td>
-              <td className="tabular-nums">{formatearMoneda(p.precio)}</td>
-              <td>
-                <input type="number" value={editando[p.id] ?? ''} onChange={(e) => setEditando((s) => ({ ...s, [p.id]: e.target.value }))} className={`w-24 tabular-nums ${INPUT}`} placeholder="$" />
-              </td>
-              <td className="flex gap-3 py-1">
-                <button type="button" onClick={() => void guardarPrecio(p.id)} disabled={!editando[p.id]} className="font-bold text-oro-400 hover:text-oro-300 disabled:text-piedra-600">Guardar</button>
-                <button type="button" onClick={() => admin.historialPrecios(token, p.id).then((filas) => setHistorial({ id: p.id, filas }))} className="text-piedra-400 hover:text-piedra-200">Historial</button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      {historial && (
-        <div className={`mt-4 p-3 text-sm ${CARD}`}>
-          <p className="mb-1 font-bold text-piedra-200">Historial de precio (RF-D-4)</p>
-          {historial.filas.length === 0 && <p className="text-piedra-500">Sin cambios registrados</p>}
-          {historial.filas.map((h, i) => (
-            <p key={i} className="tabular-nums text-piedra-400">{h.createdAt.slice(0, 10)}: ${h.precioAnterior} → ${h.precioNuevo}</p>
+      <p className="mb-1 text-sm text-piedra-500">
+        El menú es del negocio (aplica a todas las sucursales). La categoría y subcategoría las escribes al dar de alta.
+      </p>
+      <p className="mb-3 text-sm text-piedra-400">
+        {gestionable
+          ? 'Existencias mostradas de la sucursal seleccionada. Agotar/reactivar afecta solo a esa sucursal.'
+          : '⚠ Elige una sucursal arriba para ver y cambiar existencias (agotado/disponible es por sucursal).'}
+      </p>
+
+      {/* Alta */}
+      <div className={`mb-5 flex flex-wrap items-end gap-2 p-3 ${CARD}`}>
+        <input value={nuevo.nombre} onChange={(e) => setNuevo({ ...nuevo, nombre: e.target.value })} placeholder="Nombre" className={INPUT} />
+        <input list="cats" value={nuevo.categoria} onChange={(e) => setNuevo({ ...nuevo, categoria: e.target.value })} placeholder="Categoría (p. ej. Bebidas)" className={INPUT} />
+        <input list="subs" value={nuevo.subcategoria} onChange={(e) => setNuevo({ ...nuevo, subcategoria: e.target.value })} placeholder="Subcategoría (p. ej. Jugos)" className={INPUT} />
+        <input value={nuevo.precio} onChange={(e) => setNuevo({ ...nuevo, precio: e.target.value })} placeholder="Precio $" type="number" className={`w-28 tabular-nums ${INPUT}`} />
+        <button type="button" onClick={() => void crear()} className={BTN}>Agregar producto</button>
+        {error && <span className="font-bold text-rojo-400">{error}</span>}
+        <datalist id="cats">{listaCategorias.map((c) => <option key={c} value={c} />)}</datalist>
+        <datalist id="subs">{listaSub.map((s) => <option key={s} value={s} />)}</datalist>
+      </div>
+
+      {/* Listado por categoría → subcategoría */}
+      {[...grupos.entries()].map(([catId, subs]) => (
+        <div key={catId} className="mb-5">
+          <h3 className="mb-1 text-h2 font-bold text-oro-300">{catNombre.get(catId) ?? '—'}</h3>
+          {[...subs.entries()].map(([sub, prods]) => (
+            <div key={sub} className="mb-2">
+              <p className="mb-1 text-xs font-bold uppercase tracking-wide text-piedra-500">{sub}</p>
+              <div className={CARD}>
+                {prods.map((p) =>
+                  editId === p.id ? (
+                    <div key={p.id} className="flex flex-wrap items-end gap-2 border-b border-carbon-800 p-2 last:border-0">
+                      <input value={editForm.nombre} onChange={(e) => setEditForm({ ...editForm, nombre: e.target.value })} className={INPUT} />
+                      <input list="cats" value={editForm.categoria} onChange={(e) => setEditForm({ ...editForm, categoria: e.target.value })} className={INPUT} />
+                      <input list="subs" value={editForm.subcategoria} onChange={(e) => setEditForm({ ...editForm, subcategoria: e.target.value })} placeholder="Subcategoría" className={INPUT} />
+                      <button type="button" onClick={() => void guardarEdicion()} className={BTN}>Guardar</button>
+                      <button type="button" onClick={() => setEditId(null)} className="text-sm text-piedra-400">Cancelar</button>
+                    </div>
+                  ) : (
+                    <div key={p.id} className="flex flex-wrap items-center gap-3 border-b border-carbon-800 px-3 py-2 last:border-0">
+                      <span className="min-w-40 flex-1 font-bold">{p.nombre}</span>
+                      <span className="tabular-nums text-piedra-300">{formatearMoneda(p.precio)}</span>
+                      <span className={`text-xs font-bold ${p.disponible ? 'text-ok' : 'text-rojo-400'}`}>
+                        {p.disponible ? '● disponible' : '✕ agotado'}
+                      </span>
+                      <input type="number" value={editPrecio[p.id] ?? ''} onChange={(e) => setEditPrecio((s) => ({ ...s, [p.id]: e.target.value }))} className={`w-24 tabular-nums ${INPUT}`} placeholder="nuevo $" />
+                      <button type="button" onClick={() => void guardarPrecio(p.id)} disabled={!editPrecio[p.id]} className="text-sm font-bold text-oro-400 hover:text-oro-300 disabled:text-piedra-600">Precio</button>
+                      <button
+                        type="button"
+                        disabled={!gestionable}
+                        onClick={() => void admin.cambiarDisponibilidad(token, p.id, !p.disponible, esSuper ? sucursal : undefined).then(cargar)}
+                        className="text-sm font-bold text-piedra-300 hover:text-piedra-100 disabled:text-piedra-600"
+                      >
+                        {p.disponible ? 'Marcar agotado' : 'Reactivar'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { setEditId(p.id); setEditForm({ nombre: p.nombre, categoria: catNombre.get(p.categoriaId) ?? '', subcategoria: p.subcategoria ?? '' }); }}
+                        className="text-sm text-piedra-400 hover:text-piedra-200"
+                      >
+                        Editar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { if (confirm(`¿Dar de baja "${p.nombre}"?`)) void admin.eliminarProducto(token, p.id).then(cargar); }}
+                        className="text-sm font-bold text-rojo-400 hover:text-rojo-300"
+                      >
+                        Borrar
+                      </button>
+                    </div>
+                  ),
+                )}
+              </div>
+            </div>
           ))}
         </div>
-      )}
+      ))}
     </div>
   );
 }
 
-function PanelUsuarios({ token, esSuper, sucursales }: { token: string; esSuper: boolean; sucursales: Sucursal[] }) {
+function PanelUsuarios({ token, esSuper, sucursal, sucursales }: { token: string; esSuper: boolean; sucursal: string; sucursales: Sucursal[] }) {
   const [usuarios, setUsuarios] = useState<UsuarioAdmin[]>([]);
   const [nuevo, setNuevo] = useState({ nombre: '', rol: 'mesero', sucursalId: '', pin: '' });
   const [error, setError] = useState<string | null>(null);
   const nombreSuc = useMemo(() => new Map(sucursales.map((s) => [s.id, s.nombre])), [sucursales]);
-  const cargar = useCallback(async () => setUsuarios(await admin.usuarios(token)), [token]);
+  const cargar = useCallback(async () => setUsuarios(await admin.usuarios(token, sucursal)), [token, sucursal]);
   useEffect(() => { void cargar(); }, [cargar]);
   useEffect(() => setNuevo((n) => ({ ...n, sucursalId: sucursales[0]?.id ?? '' })), [sucursales]);
 
@@ -668,12 +768,16 @@ function PanelGastos({ token, desde, hasta, sucursal, sucursales, esSuper }: Ran
 // Alta/baja de sucursales (RF-B). La clave se muestra grande: es lo que el
 // mesero escribe para entrar. onCambio refresca la lista global (para que las
 // nuevas aparezcan al asignar admin/usuarios/gastos).
-function PanelSucursales({ token, onCambio }: { token: string; onCambio: () => void }) {
+function PanelSucursales({ token, sucursal, onCambio }: { token: string; sucursal: string; onCambio: () => void }) {
   const [filas, setFilas] = useState<Sucursal[]>([]);
   const [nuevo, setNuevo] = useState({ nombre: '', direccion: '' });
   const [error, setError] = useState<string | null>(null);
+  const [claveEdit, setClaveEdit] = useState<Record<string, string>>({});
   const cargar = useCallback(async () => setFilas(await admin.sucursales(token)), [token]);
   useEffect(() => { void cargar(); }, [cargar]);
+
+  // El filtro del topbar acota la vista a la sucursal elegida (o todas).
+  const visibles = sucursal ? filas.filter((s) => s.id === sucursal) : filas;
 
   async function crear() {
     setError(null);
@@ -686,6 +790,17 @@ function PanelSucursales({ token, onCambio }: { token: string; onCambio: () => v
     } catch { setError('No se pudo crear'); }
   }
 
+  async function guardarClave(id: string) {
+    const nueva = (claveEdit[id] ?? '').trim();
+    if (nueva.length < 3) return;
+    try {
+      await admin.editarSucursal(token, id, { clave: nueva });
+      setClaveEdit((c) => { const n = { ...c }; delete n[id]; return n; });
+      await cargar();
+      onCambio();
+    } catch { setError('Esa clave ya está en uso.'); }
+  }
+
   return (
     <div>
       <h2 className="mb-3 text-h2 font-bold text-piedra-100">Sucursales</h2>
@@ -696,7 +811,7 @@ function PanelSucursales({ token, onCambio }: { token: string; onCambio: () => v
         {error && <span className="font-bold text-rojo-400">{error}</span>}
       </div>
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-        {filas.map((s) => (
+        {visibles.map((s) => (
           <div key={s.id} className={`p-4 ${CARD}`}>
             <div className="mb-1 flex items-center justify-between">
               <span className="text-h2 font-bold text-oro-300">{s.nombre}</span>
@@ -705,26 +820,38 @@ function PanelSucursales({ token, onCambio }: { token: string; onCambio: () => v
             <p className="mb-2 text-sm text-piedra-400">
               Clave: <span className="text-lg font-bold tracking-widest text-oro-400">{s.clave}</span>
             </p>
+            {/* Cambiar la clave (seguridad): quien tenga la vieja deja de entrar. */}
+            <div className="mb-2 flex flex-wrap items-center gap-2">
+              <input
+                value={claveEdit[s.id] ?? ''}
+                onChange={(e) => setClaveEdit((c) => ({ ...c, [s.id]: e.target.value.toUpperCase() }))}
+                placeholder="Nueva clave"
+                className={`w-40 tracking-widest ${INPUT}`}
+              />
+              <button type="button" onClick={() => void guardarClave(s.id)} disabled={(claveEdit[s.id] ?? '').trim().length < 3} className="text-sm font-bold text-oro-400 hover:text-oro-300 disabled:text-piedra-600">
+                Cambiar clave
+              </button>
+            </div>
             <p className="mb-3 text-sm text-piedra-500">{s.direccion || 'Sin dirección'}</p>
             <button type="button" onClick={() => void admin.editarSucursal(token, s.id, { activo: !s.activo }).then(() => { void cargar(); onCambio(); })} className="text-sm font-bold text-piedra-400 hover:text-piedra-200">
               {s.activo ? 'Desactivar' : 'Reactivar'}
             </button>
           </div>
         ))}
-        {filas.length === 0 && <p className="text-piedra-500">Sin sucursales.</p>}
+        {visibles.length === 0 && <p className="text-piedra-500">Sin sucursales.</p>}
       </div>
     </div>
   );
 }
 
-function PanelAdmins({ token, sucursales }: { token: string; sucursales: Sucursal[] }) {
+function PanelAdmins({ token, sucursal, sucursales }: { token: string; sucursal: string; sucursales: Sucursal[] }) {
   const [usuarios, setUsuarios] = useState<UsuarioAdmin[]>([]);
   const [nuevo, setNuevo] = useState({ nombre: '', email: '', password: '', sucursalId: '' });
   const [error, setError] = useState<string | null>(null);
   const claveSuc = useMemo(() => new Map(sucursales.map((s) => [s.id, s])), [sucursales]);
-  const cargar = useCallback(async () => setUsuarios(await admin.usuarios(token)), [token]);
+  const cargar = useCallback(async () => setUsuarios(await admin.usuarios(token, sucursal)), [token, sucursal]);
   useEffect(() => { void cargar(); }, [cargar]);
-  useEffect(() => setNuevo((n) => ({ ...n, sucursalId: sucursales[0]?.id ?? '' })), [sucursales]);
+  useEffect(() => setNuevo((n) => ({ ...n, sucursalId: sucursal || sucursales[0]?.id || '' })), [sucursales, sucursal]);
   const admins = usuarios.filter((u) => u.rol === 'administrador');
 
   async function crear() {

@@ -11,7 +11,7 @@
 import { fileURLToPath } from 'node:url';
 import { config as cargarEnv } from 'dotenv';
 import { crearDb } from './index';
-import { categoria, dispositivo, mesa, producto, sucursal, usuario } from './schema/index';
+import { categoria, dispositivo, mesa, producto, productoDisponibilidad, sucursal, usuario } from './schema/index';
 
 cargarEnv({ path: fileURLToPath(new URL('../../../.env', import.meta.url)) });
 
@@ -121,19 +121,24 @@ await db
 await db
   .insert(producto)
   .values([
-    { id: uuid(200), categoriaId: ID.catTacos, nombre: 'Pastor', precioBase: '18.00' },
-    { id: uuid(201), categoriaId: ID.catTacos, nombre: 'Árabe', precioBase: '20.00' },
-    { id: uuid(202), categoriaId: ID.catTacos, nombre: 'Suadero', precioBase: '18.00' },
-    { id: uuid(203), categoriaId: ID.catTacos, nombre: 'Bistec', precioBase: '18.00' },
-    { id: uuid(204), categoriaId: ID.catTacos, nombre: 'Campechano', precioBase: '22.00' },
-    // disponible=false ejercita RF-D-7 en la UI desde el primer día.
-    { id: uuid(205), categoriaId: ID.catTacos, nombre: 'Chorizo', precioBase: '18.00', disponible: false },
-    { id: uuid(206), categoriaId: ID.catBebidas, nombre: 'Refresco', precioBase: '25.00' },
-    { id: uuid(207), categoriaId: ID.catBebidas, nombre: 'Agua de horchata', precioBase: '30.00' },
-    { id: uuid(208), categoriaId: ID.catBebidas, nombre: 'Agua natural', precioBase: '15.00' },
-    { id: uuid(209), categoriaId: ID.catExtras, nombre: 'Queso fundido', precioBase: '45.00' },
-    { id: uuid(210), categoriaId: ID.catExtras, nombre: 'Orden de cebollitas', precioBase: '20.00' },
+    { id: uuid(200), categoriaId: ID.catTacos, subcategoria: 'Árabes', nombre: 'Pastor', precioBase: '18.00' },
+    { id: uuid(201), categoriaId: ID.catTacos, subcategoria: 'Árabes', nombre: 'Árabe', precioBase: '20.00' },
+    { id: uuid(202), categoriaId: ID.catTacos, subcategoria: 'Tradicionales', nombre: 'Suadero', precioBase: '18.00' },
+    { id: uuid(203), categoriaId: ID.catTacos, subcategoria: 'Tradicionales', nombre: 'Bistec', precioBase: '18.00' },
+    { id: uuid(204), categoriaId: ID.catTacos, subcategoria: 'Tradicionales', nombre: 'Campechano', precioBase: '22.00' },
+    { id: uuid(205), categoriaId: ID.catTacos, subcategoria: 'Tradicionales', nombre: 'Chorizo', precioBase: '18.00' },
+    { id: uuid(206), categoriaId: ID.catBebidas, subcategoria: 'Refrescos', nombre: 'Refresco', precioBase: '25.00' },
+    { id: uuid(207), categoriaId: ID.catBebidas, subcategoria: 'Aguas frescas', nombre: 'Agua de horchata', precioBase: '30.00' },
+    { id: uuid(208), categoriaId: ID.catBebidas, subcategoria: 'Aguas frescas', nombre: 'Agua natural', precioBase: '15.00' },
+    { id: uuid(209), categoriaId: ID.catExtras, subcategoria: 'Para acompañar', nombre: 'Queso fundido', precioBase: '45.00' },
+    { id: uuid(210), categoriaId: ID.catExtras, subcategoria: 'Para acompañar', nombre: 'Orden de cebollitas', precioBase: '20.00' },
   ])
+  .onConflictDoNothing();
+
+// Chorizo agotado SOLO en Centro (RF-D-7 por sucursal): en Norte sigue disponible.
+await db
+  .insert(productoDisponibilidad)
+  .values({ productoId: uuid(205), sucursalId: ID.sucursal, disponible: false })
   .onConflictDoNothing();
 
 console.log('✓ Listo: 2 sucursales · 6 usuarios · 3 dispositivos · 8 mesas · 11 productos');

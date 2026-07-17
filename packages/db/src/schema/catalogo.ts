@@ -27,6 +27,9 @@ export const producto = pgTable(
       .references(() => categoria.id),
     nombre: text('nombre').notNull(),
     descripcion: text('descripcion'),
+    /** Subcategoría de texto libre (RF-D-6): la escribe el admin al dar de alta
+     * el producto. Ej. Bebidas → "Jugos", Platillos → "Vegetarianos". */
+    subcategoria: text('subcategoria'),
     precioBase: numeric('precio_base', { precision: 10, scale: 2 }).notNull(),
     /** Temporal: "se acabó la carne". Lo decide el día (RF-D-7). */
     disponible: boolean('disponible').notNull().default(true),
@@ -57,6 +60,26 @@ export const productoPrecioHistorial = pgTable('producto_precio_historial', {
     .references(() => usuario.id),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
+
+/**
+ * Disponibilidad ("se acabó") POR SUCURSAL (RF-D-7). Cada sucursal agota
+ * distinto: Norte se queda sin pastor y Centro sigue teniéndolo. Ausencia de
+ * fila = disponible. El catálogo del mesero/cocina se resuelve con su sucursal.
+ */
+export const productoDisponibilidad = pgTable(
+  'producto_disponibilidad',
+  {
+    productoId: uuid('producto_id')
+      .notNull()
+      .references(() => producto.id),
+    sucursalId: uuid('sucursal_id')
+      .notNull()
+      .references(() => sucursal.id),
+    disponible: boolean('disponible').notNull().default(true),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.productoId, t.sucursalId] })],
+);
 
 /** Override de precio por sucursal (RF-D-8, prioridad C). */
 export const productoPrecioSucursal = pgTable(

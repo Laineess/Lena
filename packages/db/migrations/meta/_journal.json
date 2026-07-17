@@ -57,6 +57,20 @@
       "when": 1784390000000,
       "tag": "0007_clave_sucursal",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1784460000000,
+      "tag": "0008_subcategoria_producto",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1784530000000,
+      "tag": "0009_disponibilidad_por_sucursal",
+      "breakpoints": true
     }
   ]
 }

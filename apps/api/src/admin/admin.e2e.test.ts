@@ -211,6 +211,86 @@ describe('gestión del administrador', () => {
     expect(r.statusCode).toBe(400);
     expect((r.json() as { error: string }).error).toBe('pin_invalido');
   });
+
+  it('crear producto con categoría nueva y subcategoría; aparece en el catálogo (RF-D-6)', async () => {
+    const r = await srv.app.inject({
+      method: 'POST',
+      url: '/admin/productos',
+      headers: admin,
+      payload: { nombre: 'Gringa', categoria: 'Especiales', subcategoria: 'De la casa', precio: 3500 },
+    });
+    expect(r.statusCode).toBe(200);
+    const id = (r.json() as { id: string }).id;
+
+    const cat = await get('/catalogo', mesero);
+    const gringa = (cat.body.productos as unknown as { nombre: string; subcategoria: string | null }[]).find(
+      (p) => p.nombre === 'Gringa',
+    );
+    expect(gringa?.subcategoria).toBe('De la casa');
+
+    const { sql } = await import('drizzle-orm');
+    await owner.db.execute(sql`DELETE FROM producto WHERE id = ${id}`);
+    await owner.db.execute(sql`DELETE FROM categoria WHERE nombre = 'Especiales'`);
+  });
+
+  it('marcar producto agotado y reactivarlo (RF-D-7)', async () => {
+    const off = await srv.app.inject({
+      method: 'PATCH',
+      url: `/productos/${ID.pastor}/disponibilidad`,
+      headers: admin,
+      payload: { disponible: false },
+    });
+    expect((off.json() as { disponible: boolean }).disponible).toBe(false);
+    const on = await srv.app.inject({
+      method: 'PATCH',
+      url: `/productos/${ID.pastor}/disponibilidad`,
+      headers: admin,
+      payload: { disponible: true },
+    });
+    expect((on.json() as { disponible: boolean }).disponible).toBe(true);
+  });
+
+  it('agotar en una sucursal NO afecta a otra (RF-D-7 por sucursal)', async () => {
+    // El superadmin agota Pastor en Norte.
+    await srv.app.inject({
+      method: 'PATCH',
+      url: `/productos/${ID.pastor}/disponibilidad`,
+      headers: superadmin,
+      payload: { disponible: false, sucursalId: SUCURSAL_NORTE },
+    });
+    // El mesero de Centro sigue viéndolo disponible.
+    const centro = await get('/catalogo', mesero);
+    const pC = (centro.body.productos as unknown as { id: string; disponible: boolean }[]).find((p) => p.id === ID.pastor);
+    expect(pC?.disponible).toBe(true);
+    // En Norte (catálogo con ?sucursalId) está agotado.
+    const norte = await get(`/catalogo?sucursalId=${SUCURSAL_NORTE}`, superadmin);
+    const pN = (norte.body.productos as unknown as { id: string; disponible: boolean }[]).find((p) => p.id === ID.pastor);
+    expect(pN?.disponible).toBe(false);
+
+    const { sql } = await import('drizzle-orm');
+    await owner.db.execute(sql`DELETE FROM producto_disponibilidad WHERE sucursal_id = ${SUCURSAL_NORTE}`);
+  });
+
+  it('el superadmin cambia la clave de una sucursal; la vieja deja de servir (RF-B)', async () => {
+    const r = await srv.app.inject({
+      method: 'PATCH',
+      url: `/admin/sucursales/${SUCURSAL_NORTE}`,
+      headers: superadmin,
+      payload: { clave: 'NORTE9' },
+    });
+    expect(r.statusCode).toBe(200);
+    const vieja = await srv.app.inject({ method: 'POST', url: '/auth/sucursal', payload: { clave: 'NORTE' } });
+    expect(vieja.statusCode).toBe(401);
+    const nueva = await srv.app.inject({ method: 'POST', url: '/auth/sucursal', payload: { clave: 'NORTE9' } });
+    expect(nueva.statusCode).toBe(200);
+    // Restaurar para no afectar a otros tests.
+    await srv.app.inject({
+      method: 'PATCH',
+      url: `/admin/sucursales/${SUCURSAL_NORTE}`,
+      headers: superadmin,
+      payload: { clave: 'NORTE' },
+    });
+  });
 });
 
 describe('roles: superadmin vs administrador', () => {
