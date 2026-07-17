@@ -46,6 +46,8 @@ export function AdminEscritorio({ token, onSalir }: { token: string; onSalir: ()
             </button>
           ))}
         </nav>
+        <EstadoDispositivos token={token} />
+
         <button type="button" onClick={onSalir} className="mt-6 text-sm text-piedra-500">
           ‹ Salir
         </button>
@@ -592,6 +594,39 @@ function PanelGastos({ token, desde, hasta }: RangoProps) {
           )}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+// Estado de sync de las tablets (RNF-O-5): detecta la que cree sincronizar y
+// no lo hace. Umbral de alerta: 10 minutos.
+function EstadoDispositivos({ token }: { token: string }) {
+  const [disp, setDisp] = useState<{ id: string; nombre: string; activo: boolean; minutosSinSync: number | null }[]>(
+    [],
+  );
+  useEffect(() => {
+    const cargar = () =>
+      admin
+        .dispositivos(token)
+        .then(setDisp)
+        .catch(() => setDisp([]));
+    void cargar();
+    const t = setInterval(cargar, 30_000);
+    return () => clearInterval(t);
+  }, [token]);
+
+  const rezagadas = disp.filter((d) => d.activo && d.minutosSinSync !== null && d.minutosSinSync >= 10);
+  return (
+    <div className="mt-6 border-t border-piedra-200 pt-3 text-xs">
+      {rezagadas.length === 0 ? (
+        <p className="flex items-center gap-1 text-ok">● Sistema en línea</p>
+      ) : (
+        rezagadas.map((d) => (
+          <p key={d.id} className="flex items-center gap-1 text-error">
+            ⚠ {d.nombre} · {d.minutosSinSync} min sin sync
+          </p>
+        ))
+      )}
     </div>
   );
 }

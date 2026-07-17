@@ -10,7 +10,7 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       manifest: {
-        name: 'Leña — Mesero',
+        name: 'Leña — Comandas',
         short_name: 'Leña',
         description: 'Comandas para taquería',
         theme_color: '#C2410C',
@@ -18,6 +18,16 @@ export default defineConfig({
         display: 'standalone',
         orientation: 'portrait',
         start_url: '/',
+        icons: [
+          { src: '/icon.svg', sizes: '512x512', type: 'image/svg+xml', purpose: 'any' },
+          { src: '/icon.svg', sizes: '512x512', type: 'image/svg+xml', purpose: 'maskable' },
+        ],
+      },
+      workbox: {
+        // La app es una SPA: cualquier navegación offline cae en index.html
+        // (RF-J-8). Las llamadas al API NO se sirven desde caché.
+        navigateFallback: '/index.html',
+        navigateFallbackDenylist: [/^\/(auth|sync|catalogo|comandas|productos|turno|admin)/],
       },
     }),
   ],
@@ -25,11 +35,13 @@ export default defineConfig({
     port: 5173,
     host: '127.0.0.1',
     // El API corre en :3000. En producción Caddy sirve ambos en el mismo
-    // dominio, así que no hace falta CORS (RS-T-4).
-    proxy: {
-      '/auth': 'http://127.0.0.1:3000',
-      '/sync': 'http://127.0.0.1:3000',
-      '/catalogo': 'http://127.0.0.1:3000',
-    },
+    // dominio, así que no hace falta CORS (RS-T-4). Debe cubrir TODAS las rutas
+    // del servidor, o la PWA en dev no las alcanza.
+    proxy: Object.fromEntries(
+      ['/auth', '/sync', '/catalogo', '/comandas', '/productos', '/turno', '/admin'].map((r) => [
+        r,
+        'http://127.0.0.1:3000',
+      ]),
+    ),
   },
 });

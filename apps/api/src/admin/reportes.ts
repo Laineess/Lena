@@ -1,11 +1,11 @@
 // Reportes del administrador (RF-I, RF-H-9). Solo lectura (excepto crear gasto).
 // El admin tiene alcance global (RF-C-4); todos aceptan ?sucursalId opcional.
 import { randomUUID } from 'node:crypto';
-import { sql } from 'drizzle-orm';
+import { desc, sql } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { aCentavos, aPesos } from '@lena/shared';
-import { gasto } from '@lena/db';
+import { dispositivo, gasto } from '@lena/db';
 import type { Db } from '../db';
 import { requiereRol } from '../auth/middleware';
 
@@ -273,6 +273,22 @@ export function registrarRutasAdmin(app: FastifyInstance, db: Db): void {
     const ingresos = aCentavos(ing?.ingresos ?? '0');
     const gastos = aCentavos(gas?.gastos ?? '0');
     return { ingresos, gastos, balance: ingresos - gastos };
+  });
+
+  // ── Estado de sincronización de dispositivos (RNF-O-5) ──
+  // El fallo más peligroso: una tablet que cree sincronizar y no lo hace. Se
+  // ve normal, el mesero trabaja tranquilo, y sus comandas no existen para nadie.
+  app.get('/admin/dispositivos', soloAdmin, async () => {
+    const filas = await db.select().from(dispositivo).orderBy(desc(dispositivo.ultimaSyncAt));
+    const ahora = Date.now();
+    return filas.map((d) => ({
+      id: d.id,
+      nombre: d.nombre,
+      letra: d.letra,
+      activo: d.activo,
+      ultimaSyncAt: d.ultimaSyncAt,
+      minutosSinSync: d.ultimaSyncAt ? Math.floor((ahora - d.ultimaSyncAt.getTime()) / 60_000) : null,
+    }));
   });
 
   // ── Exportar a CSV (RF-I-8) ──

@@ -179,6 +179,14 @@ describe('gestión del administrador', () => {
     expect(filas[0]?.estado).not.toBe('cobrada');
   });
 
+  it('el push sella la sync del dispositivo; el admin ve los minutos (RNF-O-5)', async () => {
+    await procesarPush(app.db, { dispositivoId: ID.tabletA, eventos: cobrada().eventos });
+    const r = await get('/admin/dispositivos', admin);
+    const tab = (r.body as unknown as { id: string; minutosSinSync: number | null }[]).find((d) => d.id === ID.tabletA);
+    expect(tab).toBeDefined();
+    expect(tab?.minutosSinSync).toBe(0); // acaba de sincronizar
+  });
+
   it('crear usuario con PIN inválido se rechaza (RS-A-6)', async () => {
     const r = await srv.app.inject({
       method: 'POST',

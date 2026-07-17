@@ -16,7 +16,16 @@ import {
   totalPagado,
 } from '@lena/shared';
 import type { EventoCable, EventoRechazado, PeticionPush, RespuestaPush } from '@lena/shared';
-import { comanda, comandaDetalle, comandaDomicilio, comandaEvento, corteCaja, mermaProducto, pago } from '@lena/db';
+import {
+  comanda,
+  comandaDetalle,
+  comandaDomicilio,
+  comandaEvento,
+  corteCaja,
+  dispositivo,
+  mermaProducto,
+  pago,
+} from '@lena/db';
 
 const FECHA_LOCAL = new Intl.DateTimeFormat('en-CA', {
   timeZone: 'America/Mexico_City',
@@ -304,5 +313,15 @@ export async function procesarPush(
 
   // Cabeza global del log: el cliente sabe hasta dónde puede jalar.
   const [cabeza] = await db.select({ seq: sql<number>`coalesce(max(${comandaEvento.seq}), 0)` }).from(comandaEvento);
-  return { aceptados, rechazados, folios, seq: Number(cabeza?.seq ?? 0) };
+  const seq = Number(cabeza?.seq ?? 0);
+
+  // Sello de sincronización del dispositivo (RNF-O-5): permite detectar una
+  // tablet que cree estar sincronizando y no lo está. Alimenta la alerta del
+  // administrador. Fuera de la transacción: es diagnóstico, no debe abortar.
+  await db
+    .update(dispositivo)
+    .set({ ultimaSyncAt: new Date(), ultimoSeq: seq })
+    .where(eq(dispositivo.id, peticion.dispositivoId));
+
+  return { aceptados, rechazados, folios, seq };
 }

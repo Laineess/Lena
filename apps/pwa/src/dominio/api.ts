@@ -258,6 +258,8 @@ export const admin = {
     g: { sucursalId: string; categoria: string; concepto: string; monto: number; fecha: string },
   ) => authSend<{ id: string }>('POST', '/admin/gastos', t, g),
   sucursales: (t: string) => authGet<{ id: string; nombre: string }[]>('/admin/sucursales', t),
+  dispositivos: (t: string) =>
+    authGet<{ id: string; nombre: string; activo: boolean; minutosSinSync: number | null }[]>('/admin/dispositivos', t),
 };
 
 // Devuelve el cierre, o {comandasAbiertas} si el servidor bloqueó (RF-H-8).

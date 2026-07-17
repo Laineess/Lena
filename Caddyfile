@@ -11,6 +11,11 @@ lena.ejemplo.mx {
 		X-Content-Type-Options "nosniff"
 		X-Frame-Options "DENY"
 		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "geolocation=(), camera=(), microphone=()"
+		# CSP: la app es autocontenida (sin CDN). 'unsafe-inline' en style por los
+		# estilos en línea de React (colores de tarjeta de cocina, barras del admin).
+		# connect-src incluye wss para el WebSocket de sync (mismo origen).
+		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self' ws: wss:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
 		-Server
 	}
 
