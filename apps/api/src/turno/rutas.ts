@@ -6,7 +6,7 @@ import { and, eq, ne, sql } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { aCentavos, aPesos } from '@lena/shared';
-import { comanda, corteCaja, pago } from '@lena/db';
+import { comanda, corteCaja, pago, retiroCaja } from '@lena/db';
 import type { Db } from '../db';
 import { requiereRol } from '../auth/middleware';
 import { sucursalScope } from '../admin/scope';
@@ -98,8 +98,16 @@ export function registrarRutasTurno(app: FastifyInstance, db: Db): void {
     const tarjeta = porMetodo.get('tarjeta') ?? 0;
     const transferencia = porMetodo.get('transferencia') ?? 0;
 
+    // Retiros de efectivo del turno (compras pagadas de la caja): bajan el
+    // esperado para que el corte cuadre en vez de marcar faltante.
+    const [retiroRow] = await db
+      .select({ total: sql<string>`coalesce(sum(${retiroCaja.monto}), 0)` })
+      .from(retiroCaja)
+      .where(eq(retiroCaja.corteCajaId, turno.id));
+    const retiros = aCentavos(retiroRow?.total ?? '0');
+
     const fondo = aCentavos(turno.fondoInicial);
-    const esperado = fondo + efectivoCobrado; // RF-H-4
+    const esperado = fondo + efectivoCobrado - retiros; // RF-H-4 (menos retiros)
     const diferencia = p.data.contadoEfectivo - esperado; // RF-H-5
 
     // RF-H-7: motivo obligatorio si |diferencia| supera el umbral.
@@ -126,7 +134,7 @@ export function registrarRutasTurno(app: FastifyInstance, db: Db): void {
       esperado,
       contado: p.data.contadoEfectivo,
       diferencia,
-      desglose: { efectivo: efectivoCobrado, tarjeta, transferencia },
+      desglose: { efectivo: efectivoCobrado, tarjeta, transferencia, retiros },
     };
   });
 }

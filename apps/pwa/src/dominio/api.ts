@@ -195,6 +195,7 @@ export interface Corte {
   diferencia: number;
   tarjeta: number;
   transferencia: number;
+  retiros: number;
   cerradoAt: string | null;
 }
 export interface MasVendido {
@@ -449,7 +450,15 @@ export const insumos = {
   compras: (t: string, d?: string, h?: string, s?: string) => authGet<CompraInsumo[]>(`/admin/compras${q(d, h, s)}`, t),
   registrarCompra: (
     t: string,
-    c: { insumoId: string; proveedorId?: string; cantidad: number; costoTotal: number; fecha: string; sucursalId?: string },
+    c: {
+      insumoId: string;
+      proveedorId?: string;
+      cantidad: number;
+      costoTotal: number;
+      fecha: string;
+      pagadoEnEfectivo?: boolean;
+      sucursalId?: string;
+    },
   ) => authSend<{ id: string }>('POST', '/admin/compras', t, c),
   conteos: (t: string, fecha: string, s?: string) => {
     const p = new URLSearchParams({ fecha });

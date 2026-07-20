@@ -8,7 +8,7 @@ import { and, asc, desc, eq, gte, lte, sql } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { aCentavos, aPesos } from '@lena/shared';
-import { compraInsumo, conteoInsumo, insumo, insumoParametro, merma, proveedor } from '@lena/db';
+import { compraInsumo, conteoInsumo, corteCaja, gasto, insumo, insumoParametro, merma, proveedor, retiroCaja } from '@lena/db';
 import type { Db } from '../db';
 import { requiereRol } from '../auth/middleware';
 import { esSuperadmin, sucursalScope } from '../admin/scope';
@@ -99,6 +99,11 @@ export function registrarRutasInsumos(app: FastifyInstance, db: Db): void {
       .orderBy(desc(compraInsumo.fecha));
     return filas.map((f) => ({ ...f, cantidad: Number(f.cantidad), costoTotal: aCentavos(f.costoTotal) }));
   });
+  // Una compra de insumo es UN registro con TRES efectos (compra unificada):
+  //  1. entra al inventario (consumo/compra sugerida),
+  //  2. cuenta como gasto (categoría insumo → balance, RF-I-4/5),
+  //  3. si se pagó en efectivo de la caja, es un retiro que baja el esperado
+  //     del corte del turno abierto (para que cuadre, no marque faltante).
   app.post('/admin/compras', soloAdmin, async (req, reply) => {
     const p = z
       .object({
@@ -107,26 +112,58 @@ export function registrarRutasInsumos(app: FastifyInstance, db: Db): void {
         cantidad,
         costoTotal: centavos,
         fecha: z.string(),
+        pagadoEnEfectivo: z.boolean().optional(),
         sucursalId: z.string().uuid().optional(),
       })
       .safeParse(req.body);
     if (!p.success) return reply.code(400).send({ error: 'peticion_invalida' });
     const sucursalId = esSuperadmin(req) ? p.data.sucursalId : req.sesion?.sucursalId;
     if (!sucursalId) return reply.code(400).send({ error: 'sucursal_requerida' });
-    const [c] = await db
-      .insert(compraInsumo)
-      .values({
-        id: randomUUID(),
-        sucursalId,
-        insumoId: p.data.insumoId,
-        proveedorId: p.data.proveedorId ?? null,
-        cantidad: String(p.data.cantidad),
-        costoTotal: aPesos(p.data.costoTotal),
-        fecha: p.data.fecha,
-        actorId: req.sesion?.usuarioId as string,
-      })
-      .returning({ id: compraInsumo.id });
-    return { id: c?.id };
+    const actorId = req.sesion?.usuarioId as string;
+    const [ins] = await db.select({ nombre: insumo.nombre }).from(insumo).where(eq(insumo.id, p.data.insumoId)).limit(1);
+    const concepto = `Compra: ${ins?.nombre ?? 'insumo'}`;
+
+    const idCompra = await db.transaction(async (tx) => {
+      const [c] = await tx
+        .insert(compraInsumo)
+        .values({
+          id: randomUUID(),
+          sucursalId,
+          insumoId: p.data.insumoId,
+          proveedorId: p.data.proveedorId ?? null,
+          cantidad: String(p.data.cantidad),
+          costoTotal: aPesos(p.data.costoTotal),
+          fecha: p.data.fecha,
+          actorId,
+        })
+        .returning({ id: compraInsumo.id });
+      // Gasto (siempre): la compra es dinero que salió del negocio.
+      const [g] = await tx
+        .insert(gasto)
+        .values({ id: randomUUID(), sucursalId, categoria: 'insumo', concepto, monto: aPesos(p.data.costoTotal), fecha: p.data.fecha, actorId })
+        .returning({ id: gasto.id });
+      // Retiro (solo si se pagó en efectivo y hay un turno abierto).
+      if (p.data.pagadoEnEfectivo) {
+        const [turno] = await tx
+          .select({ id: corteCaja.id })
+          .from(corteCaja)
+          .where(and(eq(corteCaja.sucursalId, sucursalId), eq(corteCaja.estado, 'abierto')))
+          .limit(1);
+        if (turno) {
+          await tx.insert(retiroCaja).values({
+            id: randomUUID(),
+            corteCajaId: turno.id,
+            sucursalId,
+            monto: aPesos(p.data.costoTotal),
+            motivo: concepto,
+            gastoId: g?.id ?? null,
+            actorId,
+          });
+        }
+      }
+      return c?.id;
+    });
+    return { id: idCompra };
   });
 
   // ── Conteos de apertura/cierre (por sucursal, RF-L-3/4) ──

@@ -70,3 +70,31 @@ export const gasto = pgTable(
   },
   (t) => [index('gasto_periodo_idx').on(t.sucursalId, t.fecha), check('gasto_positivo', sql`${t.monto} > 0`)],
 );
+
+/**
+ * Retiro de efectivo del fondo durante un turno (RF-H): salidas de dinero de la
+ * caja (p. ej. una compra de insumo pagada en efectivo). Se resta del esperado
+ * al cerrar, para que el corte cuadre en vez de marcar faltante. Append-only
+ * (la migración revoca UPDATE/DELETE a lena_app): es un movimiento de dinero.
+ * `gasto_id` liga con el gasto que lo originó, si vino de una compra.
+ */
+export const retiroCaja = pgTable(
+  'retiro_caja',
+  {
+    id: uuid('id').primaryKey(),
+    corteCajaId: uuid('corte_caja_id')
+      .notNull()
+      .references(() => corteCaja.id),
+    sucursalId: uuid('sucursal_id')
+      .notNull()
+      .references(() => sucursal.id),
+    monto: numeric('monto', { precision: 10, scale: 2 }).notNull(),
+    motivo: text('motivo').notNull(),
+    gastoId: uuid('gasto_id').references(() => gasto.id),
+    actorId: uuid('actor_id')
+      .notNull()
+      .references(() => usuario.id),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index('retiro_corte_idx').on(t.corteCajaId), check('retiro_positivo', sql`${t.monto} > 0`)],
+);

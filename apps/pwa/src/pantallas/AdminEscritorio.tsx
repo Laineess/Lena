@@ -535,7 +535,7 @@ function PanelCortes({ token, desde, hasta, sucursal }: RangoProps) {
       <h2 className="mb-3 text-h2 font-bold text-piedra-100">Historial de cortes</h2>
       <table className="w-full text-sm">
         <thead>
-          <tr className="border-b border-carbon-700 text-left text-piedra-500"><th className="py-2">Cerrado</th><th>Esperado</th><th>Contado</th><th>Diferencia</th><th>Tarjeta</th><th>Transfer.</th></tr>
+          <tr className="border-b border-carbon-700 text-left text-piedra-500"><th className="py-2">Cerrado</th><th>Esperado</th><th>Contado</th><th>Diferencia</th><th>Retiros</th><th>Tarjeta</th><th>Transfer.</th></tr>
         </thead>
         <tbody>
           {filas.map((c) => (
@@ -544,11 +544,12 @@ function PanelCortes({ token, desde, hasta, sucursal }: RangoProps) {
               <td className="tabular-nums">{formatearMoneda(c.esperado)}</td>
               <td className="tabular-nums">{formatearMoneda(c.contado)}</td>
               <td className={`tabular-nums ${c.diferencia !== 0 ? 'font-bold text-rojo-400' : 'text-ok'}`}>{formatearMoneda(c.diferencia)}</td>
+              <td className="tabular-nums text-piedra-400">{c.retiros > 0 ? formatearMoneda(c.retiros) : '—'}</td>
               <td className="tabular-nums">{formatearMoneda(c.tarjeta)}</td>
               <td className="tabular-nums">{formatearMoneda(c.transferencia)}</td>
             </tr>
           ))}
-          {filas.length === 0 && <tr><td colSpan={6} className="py-3 text-piedra-500">Sin cortes cerrados en el periodo</td></tr>}
+          {filas.length === 0 && <tr><td colSpan={7} className="py-3 text-piedra-500">Sin cortes cerrados en el periodo</td></tr>}
         </tbody>
       </table>
     </div>
@@ -1068,7 +1069,7 @@ function PanelInventario({ token, esSuper, sucursal }: { token: string; esSuper:
   const [sugerida, setSugerida] = useState<CompraSugerida[]>([]);
   const [edit, setEdit] = useState<Record<string, { apertura: string; cierre: string }>>({});
   const [nuevoIns, setNuevoIns] = useState<{ nombre: string; unidad: Unidad }>({ nombre: '', unidad: 'kg' });
-  const [compra, setCompra] = useState({ insumoId: '', cantidad: '', costo: '' });
+  const [compra, setCompra] = useState({ insumoId: '', cantidad: '', costo: '', efectivo: true });
   const [mermaF, setMermaF] = useState({ insumoId: '', cantidad: '', motivo: '' });
   const [par, setPar] = useState<Record<string, { ss: string; de: string }>>({});
 
@@ -1122,9 +1123,10 @@ function PanelInventario({ token, esSuper, sucursal }: { token: string; esSuper:
       cantidad: Number(compra.cantidad),
       costoTotal: Math.round(Number(compra.costo || '0') * 100),
       fecha: dia,
+      pagadoEnEfectivo: compra.efectivo,
       ...(sucParam ? { sucursalId: sucParam } : {}),
     });
-    setCompra({ insumoId: '', cantidad: '', costo: '' });
+    setCompra({ insumoId: '', cantidad: '', costo: '', efectivo: true });
     await cargar();
   }
   async function registrarMerma() {
@@ -1217,8 +1219,13 @@ function PanelInventario({ token, esSuper, sucursal }: { token: string; esSuper:
                 </select>
                 <input type="number" value={compra.cantidad} onChange={(e) => setCompra({ ...compra, cantidad: e.target.value })} placeholder={`cant. ${compra.insumoId ? unidadDe.get(compra.insumoId) ?? '' : ''}`} className={`w-24 tabular-nums ${INPUT}`} />
                 <input type="number" value={compra.costo} onChange={(e) => setCompra({ ...compra, costo: e.target.value })} placeholder="costo $" className={`w-24 tabular-nums ${INPUT}`} />
+                <label className="flex items-center gap-1 text-sm text-piedra-300">
+                  <input type="checkbox" checked={compra.efectivo} onChange={(e) => setCompra({ ...compra, efectivo: e.target.checked })} />
+                  pagado en efectivo de la caja
+                </label>
                 <button type="button" onClick={() => void registrarCompra()} className={BTN}>Registrar</button>
               </div>
+              <p className="mt-1 text-xs text-piedra-500">La compra cuenta como gasto (balance). Si es efectivo de la caja, se resta del corte del turno abierto.</p>
             </div>
 
             {/* Merma de insumo */}

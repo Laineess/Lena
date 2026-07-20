@@ -204,13 +204,14 @@ export function registrarRutasAdmin(app: FastifyInstance, db: Db): void {
   app.get('/admin/cortes', soloAdmin, async (req) => {
     const { desde, hasta, sucursalId } = rango(req);
     const filas = (await db.execute(sql`
-      SELECT id, sucursal_id, estado, fondo_inicial, esperado_efectivo, contado_efectivo,
-        diferencia, total_tarjeta, total_transferencia, abierto_at, cerrado_at
-      FROM corte_caja
-      WHERE estado = 'cerrado'
-        AND (cerrado_at AT TIME ZONE 'America/Mexico_City')::date BETWEEN ${desde} AND ${hasta}
-        ${filtroSucursal('sucursal_id', sucursalId)}
-      ORDER BY cerrado_at DESC
+      SELECT cc.id, cc.sucursal_id, cc.estado, cc.fondo_inicial, cc.esperado_efectivo, cc.contado_efectivo,
+        cc.diferencia, cc.total_tarjeta, cc.total_transferencia, cc.cerrado_at,
+        coalesce((SELECT sum(r.monto) FROM retiro_caja r WHERE r.corte_caja_id = cc.id), 0) AS retiros
+      FROM corte_caja cc
+      WHERE cc.estado = 'cerrado'
+        AND (cc.cerrado_at AT TIME ZONE 'America/Mexico_City')::date BETWEEN ${desde} AND ${hasta}
+        ${filtroSucursal('cc.sucursal_id', sucursalId)}
+      ORDER BY cc.cerrado_at DESC
     `)) as unknown as Record<string, string | null>[];
     return filas.map((c) => ({
       id: c.id,
@@ -221,6 +222,7 @@ export function registrarRutasAdmin(app: FastifyInstance, db: Db): void {
       diferencia: aCentavos(c.diferencia ?? '0'),
       tarjeta: aCentavos(c.total_tarjeta ?? '0'),
       transferencia: aCentavos(c.total_transferencia ?? '0'),
+      retiros: aCentavos(c.retiros ?? '0'),
       cerradoAt: c.cerrado_at,
     }));
   });

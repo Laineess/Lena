@@ -3,7 +3,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { sembrarCredenciales, sesionAdmin, sesionMesero, tokenAcceso } from '../auth/fixtures-auth';
 import { construirServidor } from '../servidor';
 import type { Servidor } from '../servidor';
-import { cerrarConexiones, owner } from '../sync/fixtures';
+import { cerrarConexiones, ID, owner } from '../sync/fixtures';
 
 const SUCURSAL_NORTE = '01930000-0000-7000-8000-000000000002';
 const ADMIN_NORTE = '01930000-0000-7000-8000-000000000014';
@@ -38,6 +38,9 @@ beforeEach(async () => {
 });
 
 afterAll(async () => {
+  // No dejar un turno abierto para el siguiente archivo de prueba.
+  await owner.db.execute(sql`DELETE FROM retiro_caja WHERE sucursal_id = ${ID.sucursal}`);
+  await owner.db.execute(sql`DELETE FROM corte_caja WHERE sucursal_id = ${ID.sucursal}`);
   await srv.cerrar();
   await cerrarConexiones();
 });
@@ -91,6 +94,34 @@ describe('insumos (Fase 2 · parte A)', () => {
     const consumo = await get(`/admin/consumo?desde=${FECHA}&hasta=${FECHA}`, admin);
     const fila = (consumo.body as { insumoId: string; merma: number }[]).find((x) => x.insumoId === carne);
     expect(fila?.merma).toBe(2);
+  });
+
+  it('compra en efectivo: crea gasto y retiro que baja el esperado del corte (Opción B)', async () => {
+    const FECHA = '2026-05-15';
+    // Turno limpio y abierto (fondo 1000).
+    await owner.db.execute(sql`DELETE FROM retiro_caja WHERE sucursal_id = ${ID.sucursal}`);
+    await owner.db.execute(sql`DELETE FROM corte_caja WHERE sucursal_id = ${ID.sucursal}`);
+    await srv.app.inject({ method: 'POST', url: '/turno/abrir', headers: admin, payload: { fondoInicial: 100000 } });
+
+    const carne = await crearInsumo('Carne');
+    // Compra de $200 pagada en efectivo de la caja.
+    const c = await post('/admin/compras', admin, { insumoId: carne, cantidad: 5, costoTotal: 20000, fecha: FECHA, pagadoEnEfectivo: true });
+    expect(c.code).toBe(200);
+
+    // 1) Quedó como gasto (categoría insumo).
+    const gastos = await get(`/admin/gastos?desde=${FECHA}&hasta=${FECHA}`, admin);
+    const g = (gastos.body as unknown as { categoria: string; monto: number }[]).find((x) => x.monto === 20000);
+    expect(g?.categoria).toBe('insumo');
+
+    // 2) Al cerrar, el esperado bajó por el retiro: fondo 1000 − 200 = 800.
+    const cierre = await srv.app.inject({ method: 'POST', url: '/turno/cerrar', headers: admin, payload: { contadoEfectivo: 80000 } });
+    const body = cierre.json() as { esperado: number; diferencia: number; desglose: { retiros: number } };
+    expect(body.esperado).toBe(80000);
+    expect(body.diferencia).toBe(0);
+    expect(body.desglose.retiros).toBe(20000);
+
+    await owner.db.execute(sql`DELETE FROM retiro_caja WHERE sucursal_id = ${ID.sucursal}`);
+    await owner.db.execute(sql`DELETE FROM corte_caja WHERE sucursal_id = ${ID.sucursal}`);
   });
 
   it('aislamiento por sucursal: Norte no ve el consumo de Centro (RS-Z-7)', async () => {

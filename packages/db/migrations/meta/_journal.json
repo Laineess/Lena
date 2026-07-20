@@ -78,6 +78,13 @@
       "when": 1784600000000,
       "tag": "0010_quita_disponible_global",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1784670000000,
+      "tag": "0011_retiro_caja",
+      "breakpoints": true
     }
   ]
 }
