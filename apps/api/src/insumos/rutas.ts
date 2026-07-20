@@ -8,12 +8,13 @@ import { and, asc, desc, eq, gte, lte, sql } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { aCentavos, aPesos } from '@lena/shared';
-import { compraInsumo, conteoInsumo, insumo, merma, proveedor } from '@lena/db';
+import { compraInsumo, conteoInsumo, insumo, insumoParametro, merma, proveedor } from '@lena/db';
 import type { Db } from '../db';
 import { requiereRol } from '../auth/middleware';
 import { esSuperadmin, sucursalScope } from '../admin/scope';
 import { resumirConsumo } from './consumo';
 import type { FilaConsumo } from './consumo';
+import { pronosticoHorizonte, recomendarCompra } from './compra';
 
 const soloAdmin = { preHandler: requiereRol('superadmin', 'administrador') };
 const UNIDADES = ['kg', 'g', 'l', 'ml', 'pza', 'caja', 'manojo'] as const;
@@ -246,5 +247,117 @@ export function registrarRutasInsumos(app: FastifyInstance, db: Db): void {
       mermaReportada: Number(f.merma_reportada),
     }));
     return resumirConsumo(mapeadas);
+  });
+
+  // ── Parámetros de compra por insumo (RF-M-4) ──
+  // Stock de seguridad y días de entrega, por sucursal.
+  app.put<{ Params: { id: string } }>('/admin/insumos/:id/parametro', soloAdmin, async (req, reply) => {
+    const p = z
+      .object({ stockSeguridad: z.number().nonnegative(), diasEntrega: z.number().int().positive(), sucursalId: z.string().uuid().optional() })
+      .safeParse(req.body);
+    if (!p.success) return reply.code(400).send({ error: 'peticion_invalida' });
+    const sucursalId = esSuperadmin(req) ? p.data.sucursalId : req.sesion?.sucursalId;
+    if (!sucursalId) return reply.code(400).send({ error: 'sucursal_requerida' });
+    await db
+      .insert(insumoParametro)
+      .values({ insumoId: req.params.id, sucursalId, stockSeguridad: String(p.data.stockSeguridad), diasEntrega: p.data.diasEntrega })
+      .onConflictDoUpdate({
+        target: [insumoParametro.insumoId, insumoParametro.sucursalId],
+        set: { stockSeguridad: String(p.data.stockSeguridad), diasEntrega: p.data.diasEntrega },
+      });
+    return { ok: true };
+  });
+
+  // ── Compra sugerida (RF-M) ──
+  // Por insumo: ratio insumo↔venta (regr_slope, RF-M-1), pronóstico por día de
+  // la semana (RF-M-2), recomendación (RF-M-3) con merma de producto (RF-M-7) y
+  // aviso si el historial es pobre (RF-M-6). Expone los datos base (RF-M-5).
+  app.get('/admin/compra-sugerida', soloAdmin, async (req, reply) => {
+    const suc = sucursalScope(req, (req.query as { sucursalId?: string })?.sucursalId);
+    if (!suc) return reply.code(400).send({ error: 'sucursal_requerida' });
+    const hoy = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City' }).format(new Date());
+
+    // Ventas por día → promedio por día de la semana (pronóstico, RF-M-2).
+    const ventas = (await db.execute(sql`
+      SELECT extract(dow FROM (c.cerrada_at AT TIME ZONE 'America/Mexico_City')::date)::int AS dow,
+        (c.cerrada_at AT TIME ZONE 'America/Mexico_City')::date AS fecha, SUM(d.cantidad)::float AS unidades
+      FROM comanda c JOIN comanda_detalle d ON d.comanda_id = c.id
+      WHERE c.sucursal_id = ${suc} AND c.estado = 'cobrada' AND d.estado <> 'cancelada'
+      GROUP BY 1, 2
+    `)) as unknown as { dow: number; fecha: string; unidades: number }[];
+    const porDow = new Map<number, number[]>();
+    for (const v of ventas) {
+      if (!porDow.has(v.dow)) porDow.set(v.dow, []);
+      (porDow.get(v.dow) as number[]).push(v.unidades);
+    }
+    const promPorDow: Record<number, number> = {};
+    for (const [dow, arr] of porDow) promPorDow[dow] = arr.reduce((a, b) => a + b, 0) / arr.length;
+
+    // Ratio insumo↔venta con regr_slope (RF-M-1); todos los insumos activos.
+    const ratios = (await db.execute(sql`
+      SELECT i.id, i.nombre, i.unidad, regr_slope(dc.consumo, dv.unidades) AS ratio, count(dc.fecha)::int AS dias
+      FROM insumo i
+      LEFT JOIN consumo_diario_insumo dc ON dc.insumo_id = i.id AND dc.sucursal_id = ${suc}
+      LEFT JOIN (
+        SELECT (c.cerrada_at AT TIME ZONE 'America/Mexico_City')::date AS fecha, SUM(d.cantidad)::float AS unidades
+        FROM comanda c JOIN comanda_detalle d ON d.comanda_id = c.id
+        WHERE c.sucursal_id = ${suc} AND c.estado = 'cobrada' AND d.estado <> 'cancelada'
+        GROUP BY 1
+      ) dv ON dv.fecha = dc.fecha
+      WHERE i.activo = true
+      GROUP BY i.id, i.nombre, i.unidad
+      ORDER BY i.nombre
+    `)) as unknown as { id: string; nombre: string; unidad: string; ratio: number | null; dias: number }[];
+
+    // Stock actual = último conteo (prefiere el cierre del día más reciente).
+    const stock = (await db.execute(sql`
+      SELECT DISTINCT ON (insumo_id) insumo_id, cantidad::float AS cantidad
+      FROM conteo_insumo WHERE sucursal_id = ${suc}
+      ORDER BY insumo_id, fecha DESC, (tipo = 'cierre') DESC
+    `)) as unknown as { insumo_id: string; cantidad: number }[];
+    const stockPorInsumo = new Map(stock.map((s) => [s.insumo_id, s.cantidad]));
+
+    const params = (await db.execute(sql`
+      SELECT insumo_id, stock_seguridad::float AS ss, dias_entrega AS de
+      FROM insumo_parametro WHERE sucursal_id = ${suc}
+    `)) as unknown as { insumo_id: string; ss: number; de: number }[];
+    const paramPorInsumo = new Map(params.map((p) => [p.insumo_id, { ss: p.ss, de: p.de }]));
+
+    // RF-M-7: merma de producto por cancelación, promedio de unidades por día.
+    const [mermaProm] = (await db.execute(sql`
+      SELECT coalesce(avg(dia), 0)::float AS prom FROM (
+        SELECT fecha, SUM(cantidad)::float AS dia FROM merma_producto WHERE sucursal_id = ${suc} GROUP BY fecha
+      ) t
+    `)) as unknown as { prom: number }[];
+    const mermaPorDia = mermaProm?.prom ?? 0;
+
+    const r3 = (n: number) => Math.round(n * 1000) / 1000;
+    return ratios.map((row) => {
+      const par = paramPorInsumo.get(row.id) ?? { ss: 0, de: 1 };
+      const previstoUnidades = pronosticoHorizonte(promPorDow, hoy, par.de);
+      const stockActual = stockPorInsumo.get(row.id) ?? 0;
+      const rec = recomendarCompra({
+        ratio: row.ratio,
+        previstoUnidades,
+        mermaUnidades: mermaPorDia * par.de,
+        stockActual,
+        stockSeguridad: par.ss,
+        dias: row.dias,
+      });
+      return {
+        insumoId: row.id,
+        nombre: row.nombre,
+        unidad: row.unidad,
+        ratio: row.ratio === null ? null : r3(row.ratio),
+        dias: row.dias,
+        stockActual,
+        stockSeguridad: par.ss,
+        diasEntrega: par.de,
+        previstoUnidades: r3(previstoUnidades),
+        consumoPrevisto: rec.consumoPrevisto,
+        recomendado: rec.recomendado,
+        confianza: rec.confianza,
+      };
+    });
   });
 }

@@ -423,6 +423,20 @@ export interface ResumenConsumo {
   merma: number;
   dias: number;
 }
+export interface CompraSugerida {
+  insumoId: string;
+  nombre: string;
+  unidad: string;
+  ratio: number | null;
+  dias: number;
+  stockActual: number;
+  stockSeguridad: number;
+  diasEntrega: number;
+  previstoUnidades: number;
+  consumoPrevisto: number;
+  recomendado: number | null;
+  confianza: 'alta' | 'media' | 'insuficiente';
+}
 
 export const insumos = {
   lista: (t: string) => authGet<Insumo[]>('/admin/insumos', t),
@@ -452,6 +466,11 @@ export const insumos = {
     m: { insumoId: string; cantidad: number; motivo: string; fecha: string; sucursalId?: string },
   ) => authSend<{ id: string }>('POST', '/admin/merma-insumo', t, m),
   consumo: (t: string, d?: string, h?: string, s?: string) => authGet<ResumenConsumo[]>(`/admin/consumo${q(d, h, s)}`, t),
+  // Fase 2 · parte B — compra sugerida (RF-M)
+  compraSugerida: (t: string, s?: string) =>
+    authGet<CompraSugerida[]>(`/admin/compra-sugerida${s ? `?sucursalId=${s}` : ''}`, t),
+  fijarParametro: (t: string, id: string, p: { stockSeguridad: number; diasEntrega: number; sucursalId?: string }) =>
+    authSend<{ ok: boolean }>('PUT', `/admin/insumos/${id}/parametro`, t, p),
 };
 
 // Devuelve el cierre, o {comandasAbiertas} si el servidor bloqueó (RF-H-8).

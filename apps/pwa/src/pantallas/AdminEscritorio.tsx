@@ -11,11 +11,11 @@ import type {
   Catalogo,
   ComandaDetalle,
   ComandaDia,
+  CompraSugerida,
   ConteoInsumo,
   Corte,
   Insumo,
   MasVendido,
-  Proveedor,
   ProductoCat,
   ReporteMerma,
   ResumenConsumo,
@@ -34,7 +34,6 @@ type Seccion =
   | 'canceladas'
   | 'cortes'
   | 'productos'
-  | 'insumos'
   | 'inventario'
   | 'gastos'
   | 'usuarios'
@@ -48,7 +47,6 @@ const SECCIONES: { id: Seccion; nombre: string; alerta?: boolean; super?: boolea
   { id: 'canceladas', nombre: 'Canceladas' },
   { id: 'cortes', nombre: 'Cortes' },
   { id: 'productos', nombre: 'Productos' },
-  { id: 'insumos', nombre: 'Insumos' },
   { id: 'inventario', nombre: 'Inventario' },
   { id: 'gastos', nombre: 'Gastos' },
   { id: 'usuarios', nombre: 'Usuarios' },
@@ -136,7 +134,6 @@ export function AdminEscritorio({ token, rol, onSalir }: { token: string; rol: R
         {seccion === 'canceladas' && <PanelCanceladas {...props} />}
         {seccion === 'cortes' && <PanelCortes {...props} />}
         {seccion === 'productos' && <PanelProductos token={token} esSuper={esSuper} sucursal={sucursal} />}
-        {seccion === 'insumos' && <PanelInsumos token={token} />}
         {seccion === 'inventario' && <PanelInventario token={token} esSuper={esSuper} sucursal={sucursal} />}
         {seccion === 'usuarios' && <PanelUsuarios token={token} esSuper={esSuper} sucursal={sucursal} sucursales={sucursales} />}
         {seccion === 'gastos' && <PanelGastos {...props} sucursales={sucursales} esSuper={esSuper} />}
@@ -1072,102 +1069,41 @@ function PanelAdmins({ token, sucursal, sucursales }: { token: string; sucursal:
   );
 }
 
-// ── Fase 2 · parte A — Insumos (RF-L) ──
+// ── Fase 2 — Inventario y compra sugerida (RF-L / RF-M) ──
 const UNIDADES: Unidad[] = ['kg', 'g', 'l', 'ml', 'pza', 'caja', 'manojo'];
 
-// Catálogo de insumos y proveedores (del negocio, global).
-function PanelInsumos({ token }: { token: string }) {
-  const [lista, setLista] = useState<Insumo[]>([]);
-  const [prov, setProv] = useState<Proveedor[]>([]);
-  const [nuevo, setNuevo] = useState<{ nombre: string; unidad: Unidad }>({ nombre: '', unidad: 'kg' });
-  const [nuevoProv, setNuevoProv] = useState({ nombre: '', contacto: '' });
-  const cargar = useCallback(async () => {
-    setLista(await insumos.lista(token));
-    setProv(await insumos.proveedores(token));
-  }, [token]);
-  useEffect(() => { void cargar(); }, [cargar]);
-
-  return (
-    <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-      <div>
-        <h2 className="mb-3 text-h2 font-bold text-piedra-100">Insumos</h2>
-        <div className={`mb-4 flex flex-wrap items-end gap-2 p-3 ${CARD}`}>
-          <input value={nuevo.nombre} onChange={(e) => setNuevo({ ...nuevo, nombre: e.target.value })} placeholder="Nombre (p. ej. Carne al pastor)" className={INPUT} />
-          <select value={nuevo.unidad} onChange={(e) => setNuevo({ ...nuevo, unidad: e.target.value as Unidad })} className={INPUT}>
-            {UNIDADES.map((u) => <option key={u} value={u}>{u}</option>)}
-          </select>
-          <button type="button" onClick={() => { if (nuevo.nombre.trim()) void insumos.crear(token, nuevo).then(() => { setNuevo({ nombre: '', unidad: 'kg' }); void cargar(); }); }} className={BTN}>Agregar</button>
-        </div>
-        <table className="w-full text-sm">
-          <tbody>
-            {lista.map((i) => (
-              <tr key={i.id} className="border-b border-carbon-800">
-                <td className="py-2 font-bold">{i.nombre}</td>
-                <td className="text-piedra-500">{i.unidad}</td>
-                <td className={i.activo ? 'text-ok' : 'text-piedra-500'}>{i.activo ? 'activo' : 'baja'}</td>
-                <td className="py-1 text-right">
-                  {i.activo && <button type="button" onClick={() => void insumos.editar(token, i.id, { activo: false }).then(cargar)} className="font-bold text-rojo-400 hover:text-rojo-300">Baja</button>}
-                </td>
-              </tr>
-            ))}
-            {lista.length === 0 && <tr><td className="py-3 text-piedra-500">Sin insumos aún.</td></tr>}
-          </tbody>
-        </table>
-      </div>
-
-      <div>
-        <h2 className="mb-3 text-h2 font-bold text-piedra-100">Proveedores</h2>
-        <div className={`mb-4 flex flex-wrap items-end gap-2 p-3 ${CARD}`}>
-          <input value={nuevoProv.nombre} onChange={(e) => setNuevoProv({ ...nuevoProv, nombre: e.target.value })} placeholder="Nombre" className={INPUT} />
-          <input value={nuevoProv.contacto} onChange={(e) => setNuevoProv({ ...nuevoProv, contacto: e.target.value })} placeholder="Contacto (tel/whats)" className={INPUT} />
-          <button type="button" onClick={() => { if (nuevoProv.nombre.trim()) void insumos.crearProveedor(token, { nombre: nuevoProv.nombre, ...(nuevoProv.contacto ? { contacto: nuevoProv.contacto } : {}) }).then(() => { setNuevoProv({ nombre: '', contacto: '' }); void cargar(); }); }} className={BTN}>Agregar</button>
-        </div>
-        <table className="w-full text-sm">
-          <tbody>
-            {prov.map((p) => (
-              <tr key={p.id} className="border-b border-carbon-800">
-                <td className="py-2 font-bold">{p.nombre}</td>
-                <td className="text-piedra-500">{p.contacto ?? '—'}</td>
-              </tr>
-            ))}
-            {prov.length === 0 && <tr><td className="py-3 text-piedra-500">Sin proveedores aún.</td></tr>}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-
-// Inventario del día por sucursal: conteo apertura/cierre, compras, merma de
-// insumo y el consumo derivado (apertura + compras − cierre).
+// Inventario del día por sucursal: alta de insumos, conteo apertura/cierre,
+// compras, merma de insumo, el consumo derivado y la COMPRA SUGERIDA (RF-M).
 function PanelInventario({ token, esSuper, sucursal }: { token: string; esSuper: boolean; sucursal: string }) {
   const hoy = useMemo(() => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City' }).format(new Date()), []);
   const [dia, setDia] = useState(hoy);
   const [lista, setLista] = useState<Insumo[]>([]);
-  const [prov, setProv] = useState<Proveedor[]>([]);
   const [conteos, setConteos] = useState<ConteoInsumo[]>([]);
   const [consumo, setConsumo] = useState<ResumenConsumo[]>([]);
+  const [sugerida, setSugerida] = useState<CompraSugerida[]>([]);
   const [edit, setEdit] = useState<Record<string, { apertura: string; cierre: string }>>({});
-  const [compra, setCompra] = useState({ insumoId: '', cantidad: '', costo: '', proveedorId: '' });
+  const [nuevoIns, setNuevoIns] = useState<{ nombre: string; unidad: Unidad }>({ nombre: '', unidad: 'kg' });
+  const [compra, setCompra] = useState({ insumoId: '', cantidad: '', costo: '' });
   const [mermaF, setMermaF] = useState({ insumoId: '', cantidad: '', motivo: '' });
+  const [par, setPar] = useState<Record<string, { ss: string; de: string }>>({});
 
   const gestionable = !esSuper || !!sucursal;
   const sucParam = esSuper ? sucursal || undefined : undefined;
 
   const cargar = useCallback(async () => {
     setLista(await insumos.lista(token));
-    setProv(await insumos.proveedores(token));
     if (gestionable) {
       setConteos(await insumos.conteos(token, dia, sucParam));
       setConsumo(await insumos.consumo(token, dia, dia, sucParam));
+      setSugerida(await insumos.compraSugerida(token, sucParam));
     } else {
       setConteos([]);
       setConsumo([]);
+      setSugerida([]);
     }
   }, [token, dia, gestionable, sucParam]);
   useEffect(() => { void cargar(); }, [cargar]);
 
-  // Prefill de los conteos del día en el editor.
   useEffect(() => {
     const m: Record<string, { apertura: string; cierre: string }> = {};
     for (const c of conteos) {
@@ -1176,7 +1112,18 @@ function PanelInventario({ token, esSuper, sucursal }: { token: string; esSuper:
     }
     setEdit(m);
   }, [conteos]);
+  useEffect(() => {
+    const m: Record<string, { ss: string; de: string }> = {};
+    for (const s of sugerida) m[s.insumoId] = { ss: String(s.stockSeguridad), de: String(s.diasEntrega) };
+    setPar(m);
+  }, [sugerida]);
 
+  async function crearInsumo() {
+    if (!nuevoIns.nombre.trim()) return;
+    await insumos.crear(token, nuevoIns);
+    setNuevoIns({ nombre: '', unidad: 'kg' });
+    await cargar();
+  }
   async function guardarConteo(insumoId: string, tipo: 'apertura' | 'cierre') {
     const v = edit[insumoId]?.[tipo];
     if (v === undefined || v === '') return;
@@ -1190,10 +1137,9 @@ function PanelInventario({ token, esSuper, sucursal }: { token: string; esSuper:
       cantidad: Number(compra.cantidad),
       costoTotal: Math.round(Number(compra.costo || '0') * 100),
       fecha: dia,
-      ...(compra.proveedorId ? { proveedorId: compra.proveedorId } : {}),
       ...(sucParam ? { sucursalId: sucParam } : {}),
     });
-    setCompra({ insumoId: '', cantidad: '', costo: '', proveedorId: '' });
+    setCompra({ insumoId: '', cantidad: '', costo: '' });
     await cargar();
   }
   async function registrarMerma() {
@@ -1202,97 +1148,139 @@ function PanelInventario({ token, esSuper, sucursal }: { token: string; esSuper:
     setMermaF({ insumoId: '', cantidad: '', motivo: '' });
     await cargar();
   }
+  async function guardarParam(insumoId: string) {
+    const p = par[insumoId];
+    if (!p) return;
+    await insumos.fijarParametro(token, insumoId, { stockSeguridad: Number(p.ss || '0'), diasEntrega: Number(p.de || '1'), ...(sucParam ? { sucursalId: sucParam } : {}) });
+    await cargar();
+  }
 
   const unidadDe = useMemo(() => new Map(lista.map((i) => [i.id, i.unidad])), [lista]);
+  const confColor = (c: string) => (c === 'alta' ? 'text-ok' : c === 'media' ? 'text-oro-300' : 'text-rojo-400');
 
   return (
     <div>
-      <div className="mb-4 flex items-center gap-2">
+      <div className="mb-3 flex items-center gap-2">
         <h2 className="text-h2 font-bold text-piedra-100">Inventario</h2>
         <input type="date" value={dia} onChange={(e) => setDia(e.target.value)} className={INPUT} />
       </div>
+
+      {/* Alta de insumo (antes era una sección aparte). */}
+      <div className={`mb-5 flex flex-wrap items-end gap-2 p-3 ${CARD}`}>
+        <span className="text-sm font-bold text-piedra-400">Nuevo insumo:</span>
+        <input value={nuevoIns.nombre} onChange={(e) => setNuevoIns({ ...nuevoIns, nombre: e.target.value })} placeholder="Nombre (p. ej. Carne al pastor)" className={INPUT} />
+        <select value={nuevoIns.unidad} onChange={(e) => setNuevoIns({ ...nuevoIns, unidad: e.target.value as Unidad })} className={INPUT}>
+          {UNIDADES.map((u) => <option key={u} value={u}>{u}</option>)}
+        </select>
+        <button type="button" onClick={() => void crearInsumo()} className={BTN}>Agregar</button>
+      </div>
+
       {!gestionable ? (
-        <p className="text-piedra-400">⚠ Elige una sucursal arriba: el inventario (conteos, compras, merma) es por sucursal.</p>
+        <p className="text-piedra-400">⚠ Elige una sucursal arriba: el inventario es por sucursal.</p>
       ) : (
-        <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-          {/* Conteo apertura/cierre */}
-          <div>
-            <h3 className="mb-2 text-sm font-bold uppercase tracking-wide text-piedra-500">Conteo del día (apertura / cierre)</h3>
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-carbon-700 text-left text-piedra-500"><th className="py-2">Insumo</th><th>Apertura</th><th>Cierre</th></tr>
-              </thead>
-              <tbody>
-                {lista.filter((i) => i.activo).map((i) => (
-                  <tr key={i.id} className="border-b border-carbon-800">
-                    <td className="py-2 font-bold">{i.nombre} <span className="text-piedra-500">({i.unidad})</span></td>
-                    <td>
-                      <input type="number" value={edit[i.id]?.apertura ?? ''} onChange={(e) => setEdit((s) => ({ ...s, [i.id]: { apertura: e.target.value, cierre: s[i.id]?.cierre ?? '' } }))} onBlur={() => void guardarConteo(i.id, 'apertura')} className={`w-24 tabular-nums ${INPUT}`} />
-                    </td>
-                    <td>
-                      <input type="number" value={edit[i.id]?.cierre ?? ''} onChange={(e) => setEdit((s) => ({ ...s, [i.id]: { apertura: s[i.id]?.apertura ?? '', cierre: e.target.value } }))} onBlur={() => void guardarConteo(i.id, 'cierre')} className={`w-24 tabular-nums ${INPUT}`} />
-                    </td>
-                  </tr>
-                ))}
-                {lista.length === 0 && <tr><td colSpan={3} className="py-3 text-piedra-500">Crea insumos primero (sección Insumos).</td></tr>}
-              </tbody>
-            </table>
-            <p className="mt-1 text-xs text-piedra-500">Se guarda al salir del campo. Un conteo por día/tipo (recapturar lo pisa).</p>
-          </div>
+        <>
+          <div className="mb-6 grid grid-cols-1 gap-6 xl:grid-cols-2">
+            {/* Conteo apertura/cierre */}
+            <div>
+              <h3 className="mb-2 text-sm font-bold uppercase tracking-wide text-piedra-500">Conteo del día (apertura / cierre)</h3>
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-carbon-700 text-left text-piedra-500"><th className="py-2">Insumo</th><th>Apertura</th><th>Cierre</th></tr>
+                </thead>
+                <tbody>
+                  {lista.filter((i) => i.activo).map((i) => (
+                    <tr key={i.id} className="border-b border-carbon-800">
+                      <td className="py-2 font-bold">{i.nombre} <span className="text-piedra-500">({i.unidad})</span></td>
+                      <td><input type="number" value={edit[i.id]?.apertura ?? ''} onChange={(e) => setEdit((s) => ({ ...s, [i.id]: { apertura: e.target.value, cierre: s[i.id]?.cierre ?? '' } }))} onBlur={() => void guardarConteo(i.id, 'apertura')} className={`w-24 tabular-nums ${INPUT}`} /></td>
+                      <td><input type="number" value={edit[i.id]?.cierre ?? ''} onChange={(e) => setEdit((s) => ({ ...s, [i.id]: { apertura: s[i.id]?.apertura ?? '', cierre: e.target.value } }))} onBlur={() => void guardarConteo(i.id, 'cierre')} className={`w-24 tabular-nums ${INPUT}`} /></td>
+                    </tr>
+                  ))}
+                  {lista.length === 0 && <tr><td colSpan={3} className="py-3 text-piedra-500">Crea un insumo arriba para empezar.</td></tr>}
+                </tbody>
+              </table>
+              <p className="mt-1 text-xs text-piedra-500">Se guarda al salir del campo. Un conteo por día/tipo (recapturar lo pisa).</p>
+            </div>
 
-          {/* Consumo derivado */}
-          <div>
-            <h3 className="mb-2 text-sm font-bold uppercase tracking-wide text-piedra-500">Consumo derivado del día</h3>
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-carbon-700 text-left text-piedra-500"><th className="py-2">Insumo</th><th>Consumo</th><th>Merma</th></tr>
-              </thead>
-              <tbody>
-                {consumo.map((c) => (
-                  <tr key={c.insumoId} className="border-b border-carbon-800">
-                    <td className="py-2 font-bold">{c.nombre}</td>
-                    <td className="tabular-nums text-oro-300">{c.consumo} {c.unidad}</td>
-                    <td className="tabular-nums text-rojo-400">{c.merma} {c.unidad}</td>
-                  </tr>
-                ))}
-                {consumo.length === 0 && <tr><td colSpan={3} className="py-3 text-piedra-500">Sin apertura registrada hoy.</td></tr>}
-              </tbody>
-            </table>
-            <p className="mt-1 text-xs text-piedra-500">consumo = apertura + compras − cierre.</p>
-          </div>
+            {/* Consumo derivado */}
+            <div>
+              <h3 className="mb-2 text-sm font-bold uppercase tracking-wide text-piedra-500">Consumo derivado del día</h3>
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-carbon-700 text-left text-piedra-500"><th className="py-2">Insumo</th><th>Consumo</th><th>Merma</th></tr>
+                </thead>
+                <tbody>
+                  {consumo.map((c) => (
+                    <tr key={c.insumoId} className="border-b border-carbon-800">
+                      <td className="py-2 font-bold">{c.nombre}</td>
+                      <td className="tabular-nums text-oro-300">{c.consumo} {c.unidad}</td>
+                      <td className="tabular-nums text-rojo-400">{c.merma} {c.unidad}</td>
+                    </tr>
+                  ))}
+                  {consumo.length === 0 && <tr><td colSpan={3} className="py-3 text-piedra-500">Sin apertura registrada hoy.</td></tr>}
+                </tbody>
+              </table>
+              <p className="mt-1 text-xs text-piedra-500">consumo = apertura + compras − cierre.</p>
+            </div>
 
-          {/* Registrar compra */}
-          <div className={`p-3 ${CARD}`}>
-            <h3 className="mb-2 text-sm font-bold uppercase tracking-wide text-piedra-500">Registrar compra / surtido</h3>
-            <div className="flex flex-wrap items-end gap-2">
-              <select value={compra.insumoId} onChange={(e) => setCompra({ ...compra, insumoId: e.target.value })} className={INPUT}>
-                <option value="">Insumo…</option>
-                {lista.filter((i) => i.activo).map((i) => <option key={i.id} value={i.id}>{i.nombre}</option>)}
-              </select>
-              <input type="number" value={compra.cantidad} onChange={(e) => setCompra({ ...compra, cantidad: e.target.value })} placeholder={`cant. ${compra.insumoId ? unidadDe.get(compra.insumoId) ?? '' : ''}`} className={`w-24 tabular-nums ${INPUT}`} />
-              <input type="number" value={compra.costo} onChange={(e) => setCompra({ ...compra, costo: e.target.value })} placeholder="costo $" className={`w-24 tabular-nums ${INPUT}`} />
-              <select value={compra.proveedorId} onChange={(e) => setCompra({ ...compra, proveedorId: e.target.value })} className={INPUT}>
-                <option value="">Proveedor…</option>
-                {prov.map((p) => <option key={p.id} value={p.id}>{p.nombre}</option>)}
-              </select>
-              <button type="button" onClick={() => void registrarCompra()} className={BTN}>Registrar</button>
+            {/* Registrar compra (sin proveedor) */}
+            <div className={`p-3 ${CARD}`}>
+              <h3 className="mb-2 text-sm font-bold uppercase tracking-wide text-piedra-500">Registrar compra / surtido</h3>
+              <div className="flex flex-wrap items-end gap-2">
+                <select value={compra.insumoId} onChange={(e) => setCompra({ ...compra, insumoId: e.target.value })} className={INPUT}>
+                  <option value="">Insumo…</option>
+                  {lista.filter((i) => i.activo).map((i) => <option key={i.id} value={i.id}>{i.nombre}</option>)}
+                </select>
+                <input type="number" value={compra.cantidad} onChange={(e) => setCompra({ ...compra, cantidad: e.target.value })} placeholder={`cant. ${compra.insumoId ? unidadDe.get(compra.insumoId) ?? '' : ''}`} className={`w-24 tabular-nums ${INPUT}`} />
+                <input type="number" value={compra.costo} onChange={(e) => setCompra({ ...compra, costo: e.target.value })} placeholder="costo $" className={`w-24 tabular-nums ${INPUT}`} />
+                <button type="button" onClick={() => void registrarCompra()} className={BTN}>Registrar</button>
+              </div>
+            </div>
+
+            {/* Merma de insumo */}
+            <div className={`p-3 ${CARD}`}>
+              <h3 className="mb-2 text-sm font-bold uppercase tracking-wide text-piedra-500">Merma de insumo</h3>
+              <div className="flex flex-wrap items-end gap-2">
+                <select value={mermaF.insumoId} onChange={(e) => setMermaF({ ...mermaF, insumoId: e.target.value })} className={INPUT}>
+                  <option value="">Insumo…</option>
+                  {lista.filter((i) => i.activo).map((i) => <option key={i.id} value={i.id}>{i.nombre}</option>)}
+                </select>
+                <input type="number" value={mermaF.cantidad} onChange={(e) => setMermaF({ ...mermaF, cantidad: e.target.value })} placeholder="cantidad" className={`w-24 tabular-nums ${INPUT}`} />
+                <input value={mermaF.motivo} onChange={(e) => setMermaF({ ...mermaF, motivo: e.target.value })} placeholder="Motivo (caducó, se derramó…)" className={INPUT} />
+                <button type="button" onClick={() => void registrarMerma()} className={BTN}>Registrar</button>
+              </div>
             </div>
           </div>
 
-          {/* Registrar merma de insumo */}
-          <div className={`p-3 ${CARD}`}>
-            <h3 className="mb-2 text-sm font-bold uppercase tracking-wide text-piedra-500">Merma de insumo</h3>
-            <div className="flex flex-wrap items-end gap-2">
-              <select value={mermaF.insumoId} onChange={(e) => setMermaF({ ...mermaF, insumoId: e.target.value })} className={INPUT}>
-                <option value="">Insumo…</option>
-                {lista.filter((i) => i.activo).map((i) => <option key={i.id} value={i.id}>{i.nombre}</option>)}
-              </select>
-              <input type="number" value={mermaF.cantidad} onChange={(e) => setMermaF({ ...mermaF, cantidad: e.target.value })} placeholder="cantidad" className={`w-24 tabular-nums ${INPUT}`} />
-              <input value={mermaF.motivo} onChange={(e) => setMermaF({ ...mermaF, motivo: e.target.value })} placeholder="Motivo (caducó, se derramó…)" className={INPUT} />
-              <button type="button" onClick={() => void registrarMerma()} className={BTN}>Registrar</button>
-            </div>
-          </div>
-        </div>
+          {/* Compra sugerida (RF-M) */}
+          <h3 className="mb-1 text-h2 font-bold text-oro-300">Compra sugerida</h3>
+          <p className="mb-3 text-sm text-piedra-500">
+            Aprende cuánto insumo se gasta por venta y pronostica por día de la semana. Necesita ~4 semanas de historia; mientras tanto avisa en vez de inventar.
+          </p>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-carbon-700 text-left text-piedra-500">
+                <th className="py-2">Insumo</th><th>Stock</th><th>Consumo previsto</th><th>Recomendado</th><th>Confianza</th><th>Seguridad</th><th>Días entrega</th><th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {sugerida.map((s) => (
+                <tr key={s.insumoId} className="border-b border-carbon-800">
+                  <td className="py-2 font-bold">{s.nombre}</td>
+                  <td className="tabular-nums text-piedra-300">{s.stockActual} {s.unidad}</td>
+                  <td className="tabular-nums text-piedra-400">{s.recomendado === null ? '—' : `${s.consumoPrevisto} ${s.unidad}`}</td>
+                  <td className={`tabular-nums font-bold ${s.recomendado === null ? 'text-piedra-500' : 'text-oro-300'}`}>
+                    {s.recomendado === null ? 'sin datos' : `${s.recomendado} ${s.unidad}`}
+                  </td>
+                  <td className={`font-bold ${confColor(s.confianza)}`}>{s.confianza}{s.dias ? ` · ${s.dias}d` : ''}</td>
+                  <td><input type="number" value={par[s.insumoId]?.ss ?? ''} onChange={(e) => setPar((m) => ({ ...m, [s.insumoId]: { ss: e.target.value, de: m[s.insumoId]?.de ?? '1' } }))} className={`w-20 tabular-nums ${INPUT}`} /></td>
+                  <td><input type="number" value={par[s.insumoId]?.de ?? ''} onChange={(e) => setPar((m) => ({ ...m, [s.insumoId]: { ss: m[s.insumoId]?.ss ?? '0', de: e.target.value } }))} className={`w-16 tabular-nums ${INPUT}`} /></td>
+                  <td><button type="button" onClick={() => void guardarParam(s.insumoId)} className="text-sm font-bold text-oro-400 hover:text-oro-300">Guardar</button></td>
+                </tr>
+              ))}
+              {sugerida.length === 0 && <tr><td colSpan={8} className="py-3 text-piedra-500">Sin insumos.</td></tr>}
+            </tbody>
+          </table>
+        </>
       )}
     </div>
   );
