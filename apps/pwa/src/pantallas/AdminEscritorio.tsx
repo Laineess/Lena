@@ -568,11 +568,11 @@ function PanelProductos({ token, esSuper, sucursal }: { token: string; esSuper: 
   const [historial, setHistorial] = useState<{ nombre: string; filas: { precioAnterior: string; precioNuevo: string; createdAt: string }[] } | null>(null);
   const [catEdit, setCatEdit] = useState<Record<string, string>>({});
   const [subEdit, setSubEdit] = useState<Record<string, string>>({});
-  const [precioSuc, setPrecioSuc] = useState<Record<string, string>>({});
 
-  // El admin ve la disponibilidad de SU sucursal; el superadmin, la de la que
-  // filtre arriba. Sin sucursal elegida (superadmin, "Todas") no se puede
-  // gestionar existencias (son por sucursal).
+  // El admin ve/gestiona SU sucursal; el superadmin, la que filtre arriba. Con
+  // una sucursal en foco, el precio y el agotado son de ESA sucursal. Sin
+  // sucursal (superadmin, "Todas"), el precio es el general (base) y no se
+  // gestionan existencias (son por sucursal).
   const gestionable = !esSuper || !!sucursal;
   const cargar = useCallback(
     async () => setCat(await obtenerCatalogo(token, esSuper ? sucursal || undefined : undefined)),
@@ -623,7 +623,12 @@ function PanelProductos({ token, esSuper, sucursal }: { token: string; esSuper: 
   async function guardarPrecio(id: string) {
     const pesos = Number(editPrecio[id]);
     if (!pesos) return;
-    await admin.cambiarPrecio(token, id, Math.round(pesos * 100));
+    const cents = Math.round(pesos * 100);
+    // Con una sucursal en foco (el admin siempre, o el super filtrando), el
+    // precio aplica SOLO a esa sucursal (override, RF-D-8). El super sin
+    // sucursal cambia el precio general (base) del negocio.
+    if (gestionable) await admin.fijarPrecioSucursal(token, id, cents, esSuper ? sucursal : undefined);
+    else await admin.cambiarPrecio(token, id, cents);
     setEditPrecio((e) => { const n = { ...e }; delete n[id]; return n; });
     await cargar();
   }
@@ -651,28 +656,16 @@ function PanelProductos({ token, esSuper, sucursal }: { token: string; esSuper: 
     setSubEdit((s) => { const x = { ...s }; delete x[oldSub]; return x; });
     await cargar();
   }
-  async function fijarPrecioSuc(id: string) {
-    const pesos = Number(precioSuc[id]);
-    if (!(pesos > 0)) return;
-    await admin.fijarPrecioSucursal(token, id, Math.round(pesos * 100), esSuper ? sucursal : undefined);
-    setPrecioSuc((s) => { const x = { ...s }; delete x[id]; return x; });
-    await cargar();
-  }
-  async function quitarPrecioSuc(id: string) {
-    await admin.quitarPrecioSucursal(token, id, esSuper ? sucursal : undefined);
-    await cargar();
-  }
-
   return (
     <div>
       <h2 className="mb-1 text-h2 font-bold text-piedra-100">Productos</h2>
       <p className="mb-1 text-sm text-piedra-500">
-        El menú es del negocio (aplica a todas las sucursales). La categoría y subcategoría las escribes al dar de alta.
+        El catálogo (nombre, categoría, subcategoría) es del negocio. La categoría y subcategoría las escribes al dar de alta.
       </p>
       <p className="mb-3 text-sm text-piedra-400">
         {gestionable
-          ? 'Existencias mostradas de la sucursal seleccionada. Agotar/reactivar afecta solo a esa sucursal.'
-          : '⚠ Elige una sucursal arriba para ver y cambiar existencias (agotado/disponible es por sucursal).'}
+          ? 'El precio que fijes y agotar/reactivar aplican SOLO a esta sucursal.'
+          : '⚠ Elige una sucursal arriba para fijar precio y existencias por sucursal. Sin sucursal, el precio que pongas es el general (base) del negocio.'}
       </p>
 
       {/* Alta */}
@@ -743,14 +736,6 @@ function PanelProductos({ token, esSuper, sucursal }: { token: string; esSuper: 
                       >
                         {p.disponible ? 'Marcar agotado' : 'Reactivar'}
                       </button>
-                      {/* Precio por sucursal (RF-D-8): solo con una sucursal elegida. */}
-                      {gestionable && (
-                        <>
-                          <input type="number" value={precioSuc[p.id] ?? ''} onChange={(e) => setPrecioSuc((s) => ({ ...s, [p.id]: e.target.value }))} className={`w-24 tabular-nums ${INPUT}`} placeholder="aquí $" />
-                          <button type="button" onClick={() => void fijarPrecioSuc(p.id)} disabled={!precioSuc[p.id]} className="text-sm font-bold text-oro-400 hover:text-oro-300 disabled:text-piedra-600">Fijar aquí</button>
-                          <button type="button" onClick={() => void quitarPrecioSuc(p.id)} className="text-sm text-piedra-400 hover:text-piedra-200">Precio general</button>
-                        </>
-                      )}
                       <button
                         type="button"
                         onClick={() => { setEditId(p.id); setEditForm({ nombre: p.nombre, categoria: catNombre.get(p.categoriaId) ?? '', subcategoria: p.subcategoria ?? '' }); }}
