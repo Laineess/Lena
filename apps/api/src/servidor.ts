@@ -4,13 +4,15 @@
 // cliente jala. Un solo camino de entrega (el pull con cursor), imposible de
 // perder en una reconexión.
 import { pathToFileURL } from 'node:url';
+import type { Writable } from 'node:stream';
 import rateLimit from '@fastify/rate-limit';
 import websocket from '@fastify/websocket';
 import Fastify from 'fastify';
-import type { FastifyInstance } from 'fastify';
+import type { FastifyError, FastifyInstance } from 'fastify';
 import { EsquemaPull, EsquemaPush } from '@lena/shared';
 import type { MensajeServidor } from '@lena/shared';
 import { crearDb } from './db';
+import { capturarProceso, crearFlujoLog } from './log';
 import { requiereSesion } from './auth/middleware';
 import { registrarRutasAuth } from './auth/rutas';
 import { registrarRutasGestion } from './admin/gestion';
@@ -34,11 +36,25 @@ export interface OpcionesServidor {
   // para no pelearse con el límite.
   limiteGlobal?: number;
   limiteAuth?: number;
+  // Destino de los logs. Si se pasa, el servidor registra peticiones y errores
+  // ahí; las pruebas no lo pasan y corren en silencio.
+  logStream?: Writable;
 }
 
 export async function construirServidor(urlApp?: string, opts: OpcionesServidor = {}): Promise<Servidor> {
   const { db, sql } = crearDb(urlApp);
-  const app = Fastify({ logger: false });
+  const app = Fastify({
+    logger: opts.logStream ? { level: process.env.LOG_LEVEL ?? 'info', stream: opts.logStream } : false,
+  });
+
+  // Todo error no controlado queda en el log con su stack (para resolverlo) y
+  // el cliente recibe un 500 limpio; los errores de validación (4xx) pasan tal cual.
+  app.setErrorHandler((err: FastifyError, req, reply) => {
+    const code = err.statusCode && err.statusCode >= 400 && err.statusCode < 500 ? err.statusCode : 500;
+    if (code >= 500) req.log.error({ err }, 'error no controlado');
+    else req.log.warn({ err: err.message }, 'peticion rechazada');
+    reply.code(code).send({ error: code >= 500 ? 'error_interno' : err.message });
+  });
   await app.register(websocket);
   // Límite por IP. En el VPS, Caddy pone la IP real en X-Forwarded-For (RS-T-1).
   await app.register(rateLimit, {
@@ -153,9 +169,11 @@ export async function construirServidor(urlApp?: string, opts: OpcionesServidor 
 // de Windows (backslashes) para que el guard no falle en local.
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const puerto = Number(process.env.API_PORT ?? 3000);
-  const srv = await construirServidor();
+  const flujo = crearFlujoLog();
+  capturarProceso(flujo); // registra también los crashes fuera de Fastify
+  const srv = await construirServidor(undefined, { logStream: flujo });
   await srv.app.listen({ port: puerto, host: '0.0.0.0' });
-  console.log(`API de sincronización en :${puerto}`);
+  srv.app.log.info(`API de sincronización en :${puerto}`);
   for (const sig of ['SIGINT', 'SIGTERM'] as const) {
     process.on(sig, async () => {
       await srv.cerrar();

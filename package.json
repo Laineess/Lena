@@ -13,6 +13,7 @@
     "db:generate": "pnpm --filter @lena/db generate",
     "db:migrate": "pnpm --filter @lena/db migrate",
     "db:seed": "pnpm --filter @lena/db seed",
+    "db:seed-demo": "pnpm --filter @lena/db seed-demo",
     "db:studio": "pnpm --filter @lena/db studio",
     "db:up": "docker compose up -d postgres",
     "db:down": "docker compose down",
