@@ -4,20 +4,25 @@
 // (abrir/cerrar) vive aquí, no en el mesero. Tipografía Arial (global).
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { formatearMoneda } from '@lena/shared';
-import { abrirTurno, admin, cerrarTurno, exportarCsv, obtenerCatalogo, turnoActual } from '../dominio/api';
+import { abrirTurno, admin, cerrarTurno, exportarCsv, insumos, obtenerCatalogo, turnoActual } from '../dominio/api';
 import type {
   CajaDia,
   Cancelada,
   Catalogo,
   ComandaDetalle,
   ComandaDia,
+  ConteoInsumo,
   Corte,
+  Insumo,
   MasVendido,
+  Proveedor,
   ProductoCat,
   ReporteMerma,
+  ResumenConsumo,
   Resumen,
   Sucursal,
   TurnoActual,
+  Unidad,
   UsuarioAdmin,
 } from '../dominio/api';
 
@@ -29,6 +34,8 @@ type Seccion =
   | 'canceladas'
   | 'cortes'
   | 'productos'
+  | 'insumos'
+  | 'inventario'
   | 'gastos'
   | 'usuarios'
   | 'sucursales'
@@ -41,6 +48,8 @@ const SECCIONES: { id: Seccion; nombre: string; alerta?: boolean; super?: boolea
   { id: 'canceladas', nombre: 'Canceladas' },
   { id: 'cortes', nombre: 'Cortes' },
   { id: 'productos', nombre: 'Productos' },
+  { id: 'insumos', nombre: 'Insumos' },
+  { id: 'inventario', nombre: 'Inventario' },
   { id: 'gastos', nombre: 'Gastos' },
   { id: 'usuarios', nombre: 'Usuarios' },
   { id: 'sucursales', nombre: 'Sucursales', super: true },
@@ -127,6 +136,8 @@ export function AdminEscritorio({ token, rol, onSalir }: { token: string; rol: R
         {seccion === 'canceladas' && <PanelCanceladas {...props} />}
         {seccion === 'cortes' && <PanelCortes {...props} />}
         {seccion === 'productos' && <PanelProductos token={token} esSuper={esSuper} sucursal={sucursal} />}
+        {seccion === 'insumos' && <PanelInsumos token={token} />}
+        {seccion === 'inventario' && <PanelInventario token={token} esSuper={esSuper} sucursal={sucursal} />}
         {seccion === 'usuarios' && <PanelUsuarios token={token} esSuper={esSuper} sucursal={sucursal} sucursales={sucursales} />}
         {seccion === 'gastos' && <PanelGastos {...props} sucursales={sucursales} esSuper={esSuper} />}
         {seccion === 'sucursales' && <PanelSucursales token={token} sucursal={sucursal} onCambio={recargarSucursales} />}
@@ -1057,6 +1068,232 @@ function PanelAdmins({ token, sucursal, sucursales }: { token: string; sucursal:
           {admins.length === 0 && <tr><td className="py-3 text-piedra-500">Sin administradores.</td></tr>}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+// ── Fase 2 · parte A — Insumos (RF-L) ──
+const UNIDADES: Unidad[] = ['kg', 'g', 'l', 'ml', 'pza', 'caja', 'manojo'];
+
+// Catálogo de insumos y proveedores (del negocio, global).
+function PanelInsumos({ token }: { token: string }) {
+  const [lista, setLista] = useState<Insumo[]>([]);
+  const [prov, setProv] = useState<Proveedor[]>([]);
+  const [nuevo, setNuevo] = useState<{ nombre: string; unidad: Unidad }>({ nombre: '', unidad: 'kg' });
+  const [nuevoProv, setNuevoProv] = useState({ nombre: '', contacto: '' });
+  const cargar = useCallback(async () => {
+    setLista(await insumos.lista(token));
+    setProv(await insumos.proveedores(token));
+  }, [token]);
+  useEffect(() => { void cargar(); }, [cargar]);
+
+  return (
+    <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+      <div>
+        <h2 className="mb-3 text-h2 font-bold text-piedra-100">Insumos</h2>
+        <div className={`mb-4 flex flex-wrap items-end gap-2 p-3 ${CARD}`}>
+          <input value={nuevo.nombre} onChange={(e) => setNuevo({ ...nuevo, nombre: e.target.value })} placeholder="Nombre (p. ej. Carne al pastor)" className={INPUT} />
+          <select value={nuevo.unidad} onChange={(e) => setNuevo({ ...nuevo, unidad: e.target.value as Unidad })} className={INPUT}>
+            {UNIDADES.map((u) => <option key={u} value={u}>{u}</option>)}
+          </select>
+          <button type="button" onClick={() => { if (nuevo.nombre.trim()) void insumos.crear(token, nuevo).then(() => { setNuevo({ nombre: '', unidad: 'kg' }); void cargar(); }); }} className={BTN}>Agregar</button>
+        </div>
+        <table className="w-full text-sm">
+          <tbody>
+            {lista.map((i) => (
+              <tr key={i.id} className="border-b border-carbon-800">
+                <td className="py-2 font-bold">{i.nombre}</td>
+                <td className="text-piedra-500">{i.unidad}</td>
+                <td className={i.activo ? 'text-ok' : 'text-piedra-500'}>{i.activo ? 'activo' : 'baja'}</td>
+                <td className="py-1 text-right">
+                  {i.activo && <button type="button" onClick={() => void insumos.editar(token, i.id, { activo: false }).then(cargar)} className="font-bold text-rojo-400 hover:text-rojo-300">Baja</button>}
+                </td>
+              </tr>
+            ))}
+            {lista.length === 0 && <tr><td className="py-3 text-piedra-500">Sin insumos aún.</td></tr>}
+          </tbody>
+        </table>
+      </div>
+
+      <div>
+        <h2 className="mb-3 text-h2 font-bold text-piedra-100">Proveedores</h2>
+        <div className={`mb-4 flex flex-wrap items-end gap-2 p-3 ${CARD}`}>
+          <input value={nuevoProv.nombre} onChange={(e) => setNuevoProv({ ...nuevoProv, nombre: e.target.value })} placeholder="Nombre" className={INPUT} />
+          <input value={nuevoProv.contacto} onChange={(e) => setNuevoProv({ ...nuevoProv, contacto: e.target.value })} placeholder="Contacto (tel/whats)" className={INPUT} />
+          <button type="button" onClick={() => { if (nuevoProv.nombre.trim()) void insumos.crearProveedor(token, { nombre: nuevoProv.nombre, ...(nuevoProv.contacto ? { contacto: nuevoProv.contacto } : {}) }).then(() => { setNuevoProv({ nombre: '', contacto: '' }); void cargar(); }); }} className={BTN}>Agregar</button>
+        </div>
+        <table className="w-full text-sm">
+          <tbody>
+            {prov.map((p) => (
+              <tr key={p.id} className="border-b border-carbon-800">
+                <td className="py-2 font-bold">{p.nombre}</td>
+                <td className="text-piedra-500">{p.contacto ?? '—'}</td>
+              </tr>
+            ))}
+            {prov.length === 0 && <tr><td className="py-3 text-piedra-500">Sin proveedores aún.</td></tr>}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// Inventario del día por sucursal: conteo apertura/cierre, compras, merma de
+// insumo y el consumo derivado (apertura + compras − cierre).
+function PanelInventario({ token, esSuper, sucursal }: { token: string; esSuper: boolean; sucursal: string }) {
+  const hoy = useMemo(() => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City' }).format(new Date()), []);
+  const [dia, setDia] = useState(hoy);
+  const [lista, setLista] = useState<Insumo[]>([]);
+  const [prov, setProv] = useState<Proveedor[]>([]);
+  const [conteos, setConteos] = useState<ConteoInsumo[]>([]);
+  const [consumo, setConsumo] = useState<ResumenConsumo[]>([]);
+  const [edit, setEdit] = useState<Record<string, { apertura: string; cierre: string }>>({});
+  const [compra, setCompra] = useState({ insumoId: '', cantidad: '', costo: '', proveedorId: '' });
+  const [mermaF, setMermaF] = useState({ insumoId: '', cantidad: '', motivo: '' });
+
+  const gestionable = !esSuper || !!sucursal;
+  const sucParam = esSuper ? sucursal || undefined : undefined;
+
+  const cargar = useCallback(async () => {
+    setLista(await insumos.lista(token));
+    setProv(await insumos.proveedores(token));
+    if (gestionable) {
+      setConteos(await insumos.conteos(token, dia, sucParam));
+      setConsumo(await insumos.consumo(token, dia, dia, sucParam));
+    } else {
+      setConteos([]);
+      setConsumo([]);
+    }
+  }, [token, dia, gestionable, sucParam]);
+  useEffect(() => { void cargar(); }, [cargar]);
+
+  // Prefill de los conteos del día en el editor.
+  useEffect(() => {
+    const m: Record<string, { apertura: string; cierre: string }> = {};
+    for (const c of conteos) {
+      m[c.insumoId] = m[c.insumoId] ?? { apertura: '', cierre: '' };
+      (m[c.insumoId] as { apertura: string; cierre: string })[c.tipo] = String(c.cantidad);
+    }
+    setEdit(m);
+  }, [conteos]);
+
+  async function guardarConteo(insumoId: string, tipo: 'apertura' | 'cierre') {
+    const v = edit[insumoId]?.[tipo];
+    if (v === undefined || v === '') return;
+    await insumos.guardarConteo(token, { insumoId, tipo, cantidad: Number(v), fecha: dia, ...(sucParam ? { sucursalId: sucParam } : {}) });
+    await cargar();
+  }
+  async function registrarCompra() {
+    if (!compra.insumoId || !compra.cantidad) return;
+    await insumos.registrarCompra(token, {
+      insumoId: compra.insumoId,
+      cantidad: Number(compra.cantidad),
+      costoTotal: Math.round(Number(compra.costo || '0') * 100),
+      fecha: dia,
+      ...(compra.proveedorId ? { proveedorId: compra.proveedorId } : {}),
+      ...(sucParam ? { sucursalId: sucParam } : {}),
+    });
+    setCompra({ insumoId: '', cantidad: '', costo: '', proveedorId: '' });
+    await cargar();
+  }
+  async function registrarMerma() {
+    if (!mermaF.insumoId || !mermaF.cantidad || !mermaF.motivo.trim()) return;
+    await insumos.registrarMerma(token, { insumoId: mermaF.insumoId, cantidad: Number(mermaF.cantidad), motivo: mermaF.motivo, fecha: dia, ...(sucParam ? { sucursalId: sucParam } : {}) });
+    setMermaF({ insumoId: '', cantidad: '', motivo: '' });
+    await cargar();
+  }
+
+  const unidadDe = useMemo(() => new Map(lista.map((i) => [i.id, i.unidad])), [lista]);
+
+  return (
+    <div>
+      <div className="mb-4 flex items-center gap-2">
+        <h2 className="text-h2 font-bold text-piedra-100">Inventario</h2>
+        <input type="date" value={dia} onChange={(e) => setDia(e.target.value)} className={INPUT} />
+      </div>
+      {!gestionable ? (
+        <p className="text-piedra-400">⚠ Elige una sucursal arriba: el inventario (conteos, compras, merma) es por sucursal.</p>
+      ) : (
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+          {/* Conteo apertura/cierre */}
+          <div>
+            <h3 className="mb-2 text-sm font-bold uppercase tracking-wide text-piedra-500">Conteo del día (apertura / cierre)</h3>
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-carbon-700 text-left text-piedra-500"><th className="py-2">Insumo</th><th>Apertura</th><th>Cierre</th></tr>
+              </thead>
+              <tbody>
+                {lista.filter((i) => i.activo).map((i) => (
+                  <tr key={i.id} className="border-b border-carbon-800">
+                    <td className="py-2 font-bold">{i.nombre} <span className="text-piedra-500">({i.unidad})</span></td>
+                    <td>
+                      <input type="number" value={edit[i.id]?.apertura ?? ''} onChange={(e) => setEdit((s) => ({ ...s, [i.id]: { apertura: e.target.value, cierre: s[i.id]?.cierre ?? '' } }))} onBlur={() => void guardarConteo(i.id, 'apertura')} className={`w-24 tabular-nums ${INPUT}`} />
+                    </td>
+                    <td>
+                      <input type="number" value={edit[i.id]?.cierre ?? ''} onChange={(e) => setEdit((s) => ({ ...s, [i.id]: { apertura: s[i.id]?.apertura ?? '', cierre: e.target.value } }))} onBlur={() => void guardarConteo(i.id, 'cierre')} className={`w-24 tabular-nums ${INPUT}`} />
+                    </td>
+                  </tr>
+                ))}
+                {lista.length === 0 && <tr><td colSpan={3} className="py-3 text-piedra-500">Crea insumos primero (sección Insumos).</td></tr>}
+              </tbody>
+            </table>
+            <p className="mt-1 text-xs text-piedra-500">Se guarda al salir del campo. Un conteo por día/tipo (recapturar lo pisa).</p>
+          </div>
+
+          {/* Consumo derivado */}
+          <div>
+            <h3 className="mb-2 text-sm font-bold uppercase tracking-wide text-piedra-500">Consumo derivado del día</h3>
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-carbon-700 text-left text-piedra-500"><th className="py-2">Insumo</th><th>Consumo</th><th>Merma</th></tr>
+              </thead>
+              <tbody>
+                {consumo.map((c) => (
+                  <tr key={c.insumoId} className="border-b border-carbon-800">
+                    <td className="py-2 font-bold">{c.nombre}</td>
+                    <td className="tabular-nums text-oro-300">{c.consumo} {c.unidad}</td>
+                    <td className="tabular-nums text-rojo-400">{c.merma} {c.unidad}</td>
+                  </tr>
+                ))}
+                {consumo.length === 0 && <tr><td colSpan={3} className="py-3 text-piedra-500">Sin apertura registrada hoy.</td></tr>}
+              </tbody>
+            </table>
+            <p className="mt-1 text-xs text-piedra-500">consumo = apertura + compras − cierre.</p>
+          </div>
+
+          {/* Registrar compra */}
+          <div className={`p-3 ${CARD}`}>
+            <h3 className="mb-2 text-sm font-bold uppercase tracking-wide text-piedra-500">Registrar compra / surtido</h3>
+            <div className="flex flex-wrap items-end gap-2">
+              <select value={compra.insumoId} onChange={(e) => setCompra({ ...compra, insumoId: e.target.value })} className={INPUT}>
+                <option value="">Insumo…</option>
+                {lista.filter((i) => i.activo).map((i) => <option key={i.id} value={i.id}>{i.nombre}</option>)}
+              </select>
+              <input type="number" value={compra.cantidad} onChange={(e) => setCompra({ ...compra, cantidad: e.target.value })} placeholder={`cant. ${compra.insumoId ? unidadDe.get(compra.insumoId) ?? '' : ''}`} className={`w-24 tabular-nums ${INPUT}`} />
+              <input type="number" value={compra.costo} onChange={(e) => setCompra({ ...compra, costo: e.target.value })} placeholder="costo $" className={`w-24 tabular-nums ${INPUT}`} />
+              <select value={compra.proveedorId} onChange={(e) => setCompra({ ...compra, proveedorId: e.target.value })} className={INPUT}>
+                <option value="">Proveedor…</option>
+                {prov.map((p) => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+              </select>
+              <button type="button" onClick={() => void registrarCompra()} className={BTN}>Registrar</button>
+            </div>
+          </div>
+
+          {/* Registrar merma de insumo */}
+          <div className={`p-3 ${CARD}`}>
+            <h3 className="mb-2 text-sm font-bold uppercase tracking-wide text-piedra-500">Merma de insumo</h3>
+            <div className="flex flex-wrap items-end gap-2">
+              <select value={mermaF.insumoId} onChange={(e) => setMermaF({ ...mermaF, insumoId: e.target.value })} className={INPUT}>
+                <option value="">Insumo…</option>
+                {lista.filter((i) => i.activo).map((i) => <option key={i.id} value={i.id}>{i.nombre}</option>)}
+              </select>
+              <input type="number" value={mermaF.cantidad} onChange={(e) => setMermaF({ ...mermaF, cantidad: e.target.value })} placeholder="cantidad" className={`w-24 tabular-nums ${INPUT}`} />
+              <input value={mermaF.motivo} onChange={(e) => setMermaF({ ...mermaF, motivo: e.target.value })} placeholder="Motivo (caducó, se derramó…)" className={INPUT} />
+              <button type="button" onClick={() => void registrarMerma()} className={BTN}>Registrar</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

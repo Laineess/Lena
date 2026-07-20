@@ -17,6 +17,7 @@ import { registrarRutasGestion } from './admin/gestion';
 import { registrarRutasAdmin } from './admin/reportes';
 import { registrarRutasCatalogo } from './catalogo/rutas';
 import { registrarRutasComandas } from './comandas/rutas';
+import { registrarRutasInsumos } from './insumos/rutas';
 import { registrarRutasTurno } from './turno/rutas';
 import { procesarPull } from './sync/pull';
 import { procesarPush } from './sync/push';
@@ -79,6 +80,7 @@ export async function construirServidor(urlApp?: string, opts: OpcionesServidor 
   registrarRutasTurno(app, db);
   registrarRutasAdmin(app, db);
   registrarRutasGestion(app, db);
+  registrarRutasInsumos(app, db);
 
   app.post('/sync/push', { preHandler: requiereSesion }, async (req, reply) => {
     const parsed = EsquemaPush.safeParse(req.body);

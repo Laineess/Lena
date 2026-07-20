@@ -376,6 +376,84 @@ export const admin = {
     authGet<{ id: string; nombre: string; activo: boolean; minutosSinSync: number | null }[]>('/admin/dispositivos', t),
 };
 
+// ── Fase 2 · parte A — Insumos (RF-L) ──
+export type Unidad = 'kg' | 'g' | 'l' | 'ml' | 'pza' | 'caja' | 'manojo';
+export interface Insumo {
+  id: string;
+  nombre: string;
+  unidad: Unidad;
+  activo: boolean;
+}
+export interface Proveedor {
+  id: string;
+  nombre: string;
+  contacto: string | null;
+  activo: boolean;
+}
+export interface CompraInsumo {
+  id: string;
+  insumoId: string;
+  insumo: string;
+  unidad: string;
+  cantidad: number;
+  costoTotal: number;
+  fecha: string;
+}
+export interface ConteoInsumo {
+  id: string;
+  insumoId: string;
+  tipo: 'apertura' | 'cierre';
+  cantidad: number;
+  fecha: string;
+}
+export interface MermaInsumo {
+  id: string;
+  insumoId: string;
+  insumo: string;
+  unidad: string;
+  cantidad: number;
+  motivo: string;
+  fecha: string;
+}
+export interface ResumenConsumo {
+  insumoId: string;
+  nombre: string;
+  unidad: string;
+  consumo: number;
+  merma: number;
+  dias: number;
+}
+
+export const insumos = {
+  lista: (t: string) => authGet<Insumo[]>('/admin/insumos', t),
+  crear: (t: string, i: { nombre: string; unidad: Unidad }) => authSend<{ id: string }>('POST', '/admin/insumos', t, i),
+  editar: (t: string, id: string, i: { nombre?: string; unidad?: Unidad; activo?: boolean }) =>
+    authSend<{ ok: boolean }>('PATCH', `/admin/insumos/${id}`, t, i),
+  proveedores: (t: string) => authGet<Proveedor[]>('/admin/proveedores', t),
+  crearProveedor: (t: string, p: { nombre: string; contacto?: string }) =>
+    authSend<{ id: string }>('POST', '/admin/proveedores', t, p),
+  compras: (t: string, d?: string, h?: string, s?: string) => authGet<CompraInsumo[]>(`/admin/compras${q(d, h, s)}`, t),
+  registrarCompra: (
+    t: string,
+    c: { insumoId: string; proveedorId?: string; cantidad: number; costoTotal: number; fecha: string; sucursalId?: string },
+  ) => authSend<{ id: string }>('POST', '/admin/compras', t, c),
+  conteos: (t: string, fecha: string, s?: string) => {
+    const p = new URLSearchParams({ fecha });
+    if (s) p.set('sucursalId', s);
+    return authGet<ConteoInsumo[]>(`/admin/conteos?${p.toString()}`, t);
+  },
+  guardarConteo: (
+    t: string,
+    c: { insumoId: string; tipo: 'apertura' | 'cierre'; cantidad: number; fecha: string; sucursalId?: string },
+  ) => authSend<{ ok: boolean }>('POST', '/admin/conteos', t, c),
+  merma: (t: string, d?: string, h?: string, s?: string) => authGet<MermaInsumo[]>(`/admin/merma-insumo${q(d, h, s)}`, t),
+  registrarMerma: (
+    t: string,
+    m: { insumoId: string; cantidad: number; motivo: string; fecha: string; sucursalId?: string },
+  ) => authSend<{ id: string }>('POST', '/admin/merma-insumo', t, m),
+  consumo: (t: string, d?: string, h?: string, s?: string) => authGet<ResumenConsumo[]>(`/admin/consumo${q(d, h, s)}`, t),
+};
+
 // Devuelve el cierre, o {comandasAbiertas} si el servidor bloqueó (RF-H-8).
 export async function cerrarTurno(
   token: string,
