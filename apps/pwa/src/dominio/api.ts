@@ -346,6 +346,22 @@ export const admin = {
       ...(sucursalId ? { sucursalId } : {}),
     }),
   historialPrecios: (t: string, id: string) => authGet<CambioPrecio[]>(`/admin/productos/${id}/precios`, t),
+  // Precio por sucursal (RF-D-8): override del base para una sucursal.
+  fijarPrecioSucursal: (t: string, id: string, precio: number, sucursalId?: string) =>
+    authSend<{ ok: boolean }>('PUT', `/admin/productos/${id}/precio-sucursal`, t, {
+      precio,
+      ...(sucursalId ? { sucursalId } : {}),
+    }),
+  quitarPrecioSucursal: (t: string, id: string, sucursalId?: string) =>
+    authSend<{ ok: boolean }>('DELETE', `/admin/productos/${id}/precio-sucursal${sucursalId ? `?sucursalId=${sucursalId}` : ''}`, t),
+  renombrarSubcategoria: (t: string, de: string, a: string) =>
+    authSend<{ ok: boolean }>('PATCH', '/admin/subcategorias', t, { de, a }),
+  editarCategoria: (t: string, id: string, c: { nombre?: string; activo?: boolean }) =>
+    authSend<{ ok: boolean }>('PATCH', `/admin/categorias/${id}`, t, c),
+  reabrirComanda: (t: string, id: string, motivo: string) =>
+    authSend<{ ok: boolean }>('POST', `/admin/comandas/${id}/reabrir`, t, { motivo }),
+  ingresosVsGastos: (t: string, d?: string, h?: string, s?: string) =>
+    authGet<{ ingresos: number; gastos: number; balance: number }>(`/admin/ingresos-vs-gastos${q(d, h, s)}`, t),
   gastos: (t: string, d?: string, h?: string, s?: string) => authGet<Gasto[]>(`/admin/gastos${q(d, h, s)}`, t),
   crearGasto: (
     t: string,

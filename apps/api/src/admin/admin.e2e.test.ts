@@ -250,6 +250,25 @@ describe('gestión del administrador', () => {
     expect((on.json() as { disponible: boolean }).disponible).toBe(true);
   });
 
+  it('precio por sucursal: el override gana al base (RF-D-8)', async () => {
+    // El admin de Centro fija Pastor en $20 (base $18).
+    const r = await srv.app.inject({
+      method: 'PUT',
+      url: `/admin/productos/${ID.pastor}/precio-sucursal`,
+      headers: admin,
+      payload: { precio: 2000 },
+    });
+    expect(r.statusCode).toBe(200);
+    const cat = await get('/catalogo', mesero);
+    const pastor = (cat.body.productos as unknown as { id: string; precio: number }[]).find((p) => p.id === ID.pastor);
+    expect(pastor?.precio).toBe(2000);
+    // Quitar override → vuelve al base.
+    await srv.app.inject({ method: 'DELETE', url: `/admin/productos/${ID.pastor}/precio-sucursal`, headers: admin });
+    const cat2 = await get('/catalogo', mesero);
+    const base = (cat2.body.productos as unknown as { id: string; precio: number }[]).find((p) => p.id === ID.pastor);
+    expect(base?.precio).toBe(1800);
+  });
+
   it('agotar en una sucursal NO afecta a otra (RF-D-7 por sucursal)', async () => {
     // El superadmin agota Pastor en Norte.
     await srv.app.inject({

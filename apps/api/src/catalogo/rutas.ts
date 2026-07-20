@@ -3,7 +3,7 @@ import { and, asc, eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { aCentavos } from '@lena/shared';
-import { categoria, mesa, producto, productoDisponibilidad, sucursal } from '@lena/db';
+import { categoria, mesa, producto, productoDisponibilidad, productoPrecioSucursal, sucursal } from '@lena/db';
 import type { Db } from '../db';
 import { requiereRol, requiereSesion } from '../auth/middleware';
 
@@ -14,7 +14,7 @@ export function registrarRutasCatalogo(app: FastifyInstance, db: Db): void {
     const pedida = (req.query as { sucursalId?: string })?.sucursalId;
     const sucursalId = (req.sesion?.rol === 'superadmin' ? pedida : undefined) ?? req.sesion?.sucursalId ?? null;
 
-    const [cats, prods, disp, mesas, suc] = await Promise.all([
+    const [cats, prods, disp, precios, mesas, suc] = await Promise.all([
       db.select().from(categoria).where(eq(categoria.activo, true)).orderBy(asc(categoria.orden)),
       db.select().from(producto).where(eq(producto.activo, true)).orderBy(asc(producto.nombre)),
       // Disponibilidad de ESTA sucursal (ausencia de fila = disponible).
@@ -24,6 +24,13 @@ export function registrarRutasCatalogo(app: FastifyInstance, db: Db): void {
             .from(productoDisponibilidad)
             .where(eq(productoDisponibilidad.sucursalId, sucursalId))
         : Promise.resolve([]),
+      // Precios override de ESTA sucursal (RF-D-8): ganan al precio base.
+      sucursalId
+        ? db
+            .select({ id: productoPrecioSucursal.productoId, precio: productoPrecioSucursal.precio })
+            .from(productoPrecioSucursal)
+            .where(eq(productoPrecioSucursal.sucursalId, sucursalId))
+        : Promise.resolve([]),
       sucursalId
         ? db.select().from(mesa).where(eq(mesa.sucursalId, sucursalId)).orderBy(asc(mesa.nombre))
         : Promise.resolve([]),
@@ -31,6 +38,7 @@ export function registrarRutasCatalogo(app: FastifyInstance, db: Db): void {
     ]);
 
     const dispPorProducto = new Map(disp.map((d) => [d.id, d.disponible]));
+    const precioPorProducto = new Map(precios.map((p) => [p.id, p.precio]));
 
     // El precio va en centavos (RNF-I-8): el cliente jamás hace aritmética en pesos.
     return {
@@ -40,7 +48,7 @@ export function registrarRutasCatalogo(app: FastifyInstance, db: Db): void {
         categoriaId: p.categoriaId,
         subcategoria: p.subcategoria,
         nombre: p.nombre,
-        precio: aCentavos(p.precioBase),
+        precio: aCentavos(precioPorProducto.get(p.id) ?? p.precioBase),
         disponible: dispPorProducto.get(p.id) ?? true,
       })),
       mesas: mesas.filter((m) => m.activo).map((m) => ({ id: m.id, nombre: m.nombre })),

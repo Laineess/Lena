@@ -9,7 +9,16 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { hashSecreto, validarPassword, validarPin } from '@lena/auth';
 import { EsquemaEvento, aPesos, formatearHlc } from '@lena/shared';
-import { categoria, comanda, dispositivo, producto, productoPrecioHistorial, sucursal, usuario } from '@lena/db';
+import {
+  categoria,
+  comanda,
+  dispositivo,
+  producto,
+  productoPrecioHistorial,
+  productoPrecioSucursal,
+  sucursal,
+  usuario,
+} from '@lena/db';
 import type { Db } from '../db';
 import { requiereRol } from '../auth/middleware';
 import { esSuperadmin, sucursalScope } from './scope';
@@ -141,6 +150,49 @@ export function registrarRutasGestion(app: FastifyInstance, db: Db): void {
       .from(productoPrecioHistorial)
       .where(eq(productoPrecioHistorial.productoId, req.params.id))
       .orderBy(productoPrecioHistorial.createdAt);
+  });
+
+  // RF-D-8: precio POR SUCURSAL (override del precio base). El admin lo fija en
+  // su sucursal; el superadmin en la que indique. Sin override vale el base.
+  app.put<{ Params: { id: string } }>('/admin/productos/:id/precio-sucursal', soloAdmin, async (req, reply) => {
+    const p = z.object({ precio: centavos, sucursalId: z.string().uuid().optional() }).safeParse(req.body);
+    if (!p.success) return reply.code(400).send({ error: 'peticion_invalida' });
+    const sucursalId = esSuperadmin(req) ? p.data.sucursalId : req.sesion?.sucursalId;
+    if (!sucursalId) return reply.code(400).send({ error: 'sucursal_requerida' });
+    await db
+      .insert(productoPrecioSucursal)
+      .values({ productoId: req.params.id, sucursalId, precio: aPesos(p.data.precio) })
+      .onConflictDoUpdate({
+        target: [productoPrecioSucursal.productoId, productoPrecioSucursal.sucursalId],
+        set: { precio: aPesos(p.data.precio), updatedAt: new Date() },
+      });
+    return { ok: true };
+  });
+
+  // Quita el override → el producto vuelve al precio base en esa sucursal.
+  app.delete<{ Params: { id: string }; Querystring: { sucursalId?: string } }>(
+    '/admin/productos/:id/precio-sucursal',
+    soloAdmin,
+    async (req, reply) => {
+      const sucursalId = esSuperadmin(req) ? req.query.sucursalId : req.sesion?.sucursalId;
+      if (!sucursalId) return reply.code(400).send({ error: 'sucursal_requerida' });
+      await db
+        .delete(productoPrecioSucursal)
+        .where(and(eq(productoPrecioSucursal.productoId, req.params.id), eq(productoPrecioSucursal.sucursalId, sucursalId)));
+      return { ok: true };
+    },
+  );
+
+  // ── Categorías y subcategorías (RF-D-6) ──
+  // Renombrar una subcategoría (texto libre) en TODO el menú de una vez.
+  app.patch('/admin/subcategorias', soloAdmin, async (req, reply) => {
+    const p = z.object({ de: z.string().trim().min(1), a: z.string().trim().min(1) }).safeParse(req.body);
+    if (!p.success) return reply.code(400).send({ error: 'peticion_invalida' });
+    await db
+      .update(producto)
+      .set({ subcategoria: p.data.a, updatedAt: new Date() })
+      .where(eq(producto.subcategoria, p.data.de));
+    return { ok: true };
   });
 
   // ── Categorías (RF-D-6) ──

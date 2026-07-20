@@ -71,6 +71,13 @@
       "when": 1784530000000,
       "tag": "0009_disponibilidad_por_sucursal",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1784600000000,
+      "tag": "0010_quita_disponible_global",
+      "breakpoints": true
     }
   ]
 }

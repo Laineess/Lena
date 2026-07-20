@@ -31,9 +31,8 @@ export const producto = pgTable(
      * el producto. Ej. Bebidas → "Jugos", Platillos → "Vegetarianos". */
     subcategoria: text('subcategoria'),
     precioBase: numeric('precio_base', { precision: 10, scale: 2 }).notNull(),
-    /** Temporal: "se acabó la carne". Lo decide el día (RF-D-7). */
-    disponible: boolean('disponible').notNull().default(true),
-    /** Permanente: "ya no vendemos esto". Lo decide el negocio (RF-D-5). */
+    /** Permanente: "ya no vendemos esto". Lo decide el negocio (RF-D-5).
+     * El "se acabó" (RF-D-7) es POR SUCURSAL: ver `productoDisponibilidad`. */
     activo: boolean('activo').notNull().default(true),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),

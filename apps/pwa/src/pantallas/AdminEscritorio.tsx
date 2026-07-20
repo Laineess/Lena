@@ -156,9 +156,11 @@ function PanelInicio({
 }: RangoProps & { esSuper: boolean; suPropia: Sucursal | undefined }) {
   const [r, setR] = useState<Resumen | null>(null);
   const [top, setTop] = useState<MasVendido[]>([]);
+  const [balance, setBalance] = useState<{ ingresos: number; gastos: number; balance: number } | null>(null);
   useEffect(() => {
     admin.resumen(token, desde, hasta, sucursal).then(setR).catch(() => setR(null));
     admin.masVendidos(token, desde, hasta, sucursal).then(setTop).catch(() => setTop([]));
+    admin.ingresosVsGastos(token, desde, hasta, sucursal).then(setBalance).catch(() => setBalance(null));
   }, [token, desde, hasta, sucursal]);
 
   return (
@@ -172,6 +174,19 @@ function PanelInicio({
         <Kpi titulo="Comandas" valor={String(r?.comandas ?? 0)} />
         <Kpi titulo="Ticket promedio" valor={formatearMoneda(r?.ticket ?? 0)} />
         <Kpi titulo="Merma" valor={formatearMoneda(r?.merma ?? 0)} alerta />
+      </div>
+
+      {/* Balance del periodo (RF-I-5). */}
+      <h3 className="mb-2 mt-6 text-sm font-bold uppercase tracking-wide text-piedra-500">Ingresos vs. gastos</h3>
+      <div className="grid grid-cols-3 gap-3">
+        <Kpi titulo="Ingresos" valor={formatearMoneda(balance?.ingresos ?? 0)} />
+        <Kpi titulo="Gastos" valor={formatearMoneda(balance?.gastos ?? 0)} />
+        <div className={`p-4 ${CARD}`}>
+          <p className={`text-2xl font-bold tabular-nums ${(balance?.balance ?? 0) < 0 ? 'text-rojo-400' : 'text-ok'}`}>
+            {formatearMoneda(balance?.balance ?? 0)}
+          </p>
+          <p className="text-sm text-piedra-500">Balance</p>
+        </div>
       </div>
 
       <h3 className="mb-2 mt-6 text-sm font-bold uppercase tracking-wide text-piedra-500">Más vendidos</h3>
@@ -335,7 +350,14 @@ function PanelCaja({ token, sucursal }: { token: string; sucursal: string }) {
         </tbody>
       </table>
 
-      {detalle && <DetalleComanda detalle={detalle} onCerrar={() => setDetalle(null)} />}
+      {detalle && (
+        <DetalleComanda
+          token={token}
+          detalle={detalle}
+          onCerrar={() => setDetalle(null)}
+          onReabierta={() => { setDetalle(null); cargar(); }}
+        />
+      )}
     </div>
   );
 }
@@ -346,7 +368,27 @@ function EstadoBadge({ estado }: { estado: string }) {
   return <span className={`font-bold ${color}`}>{estado}</span>;
 }
 
-function DetalleComanda({ detalle, onCerrar }: { detalle: ComandaDetalle; onCerrar: () => void }) {
+function DetalleComanda({
+  token,
+  detalle,
+  onCerrar,
+  onReabierta,
+}: {
+  token: string;
+  detalle: ComandaDetalle;
+  onCerrar: () => void;
+  onReabierta: () => void;
+}) {
+  async function reabrir() {
+    const motivo = prompt('Motivo para reabrir esta comanda cobrada:');
+    if (!motivo?.trim()) return;
+    try {
+      await admin.reabrirComanda(token, detalle.id, motivo.trim());
+      onReabierta();
+    } catch {
+      alert('No se pudo reabrir.');
+    }
+  }
   return (
     <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 p-4" onClick={onCerrar}>
       <div className={`max-h-[85vh] w-full max-w-md overflow-y-auto p-5 ${CARD}`} onClick={(e) => e.stopPropagation()}>
@@ -388,6 +430,12 @@ function DetalleComanda({ detalle, onCerrar }: { detalle: ComandaDetalle; onCerr
           <span>Total</span>
           <span className="tabular-nums text-oro-300">{formatearMoneda(detalle.total)}</span>
         </p>
+        {/* Reabrir una comanda ya cobrada (RF-G-8): queda registrado con motivo. */}
+        {detalle.estado === 'cobrada' && (
+          <button type="button" onClick={() => void reabrir()} className={`mt-4 w-full ${BTN}`}>
+            Reabrir comanda
+          </button>
+        )}
       </div>
     </div>
   );
@@ -509,6 +557,10 @@ function PanelProductos({ token, esSuper, sucursal }: { token: string; esSuper: 
   const [editForm, setEditForm] = useState({ nombre: '', categoria: '', subcategoria: '' });
   const [nuevo, setNuevo] = useState({ nombre: '', categoria: '', subcategoria: '', precio: '' });
   const [error, setError] = useState<string | null>(null);
+  const [historial, setHistorial] = useState<{ nombre: string; filas: { precioAnterior: string; precioNuevo: string; createdAt: string }[] } | null>(null);
+  const [catEdit, setCatEdit] = useState<Record<string, string>>({});
+  const [subEdit, setSubEdit] = useState<Record<string, string>>({});
+  const [precioSuc, setPrecioSuc] = useState<Record<string, string>>({});
 
   // El admin ve la disponibilidad de SU sucursal; el superadmin, la de la que
   // filtre arriba. Sin sucursal elegida (superadmin, "Todas") no se puede
@@ -577,6 +629,31 @@ function PanelProductos({ token, esSuper, sucursal }: { token: string; esSuper: 
     setEditId(null);
     await cargar();
   }
+  async function guardarCategoria(catId: string) {
+    const n = (catEdit[catId] ?? '').trim();
+    if (!n) return;
+    await admin.editarCategoria(token, catId, { nombre: n });
+    setCatEdit((c) => { const x = { ...c }; delete x[catId]; return x; });
+    await cargar();
+  }
+  async function guardarSub(oldSub: string) {
+    const n = (subEdit[oldSub] ?? '').trim();
+    if (!n || n === oldSub) return;
+    await admin.renombrarSubcategoria(token, oldSub, n);
+    setSubEdit((s) => { const x = { ...s }; delete x[oldSub]; return x; });
+    await cargar();
+  }
+  async function fijarPrecioSuc(id: string) {
+    const pesos = Number(precioSuc[id]);
+    if (!(pesos > 0)) return;
+    await admin.fijarPrecioSucursal(token, id, Math.round(pesos * 100), esSuper ? sucursal : undefined);
+    setPrecioSuc((s) => { const x = { ...s }; delete x[id]; return x; });
+    await cargar();
+  }
+  async function quitarPrecioSuc(id: string) {
+    await admin.quitarPrecioSucursal(token, id, esSuper ? sucursal : undefined);
+    await cargar();
+  }
 
   return (
     <div>
@@ -605,10 +682,32 @@ function PanelProductos({ token, esSuper, sucursal }: { token: string; esSuper: 
       {/* Listado por categoría → subcategoría */}
       {[...grupos.entries()].map(([catId, subs]) => (
         <div key={catId} className="mb-5">
-          <h3 className="mb-1 text-h2 font-bold text-oro-300">{catNombre.get(catId) ?? '—'}</h3>
+          <div className="mb-1 flex items-center gap-2">
+            <h3 className="text-h2 font-bold text-oro-300">{catNombre.get(catId) ?? '—'}</h3>
+            <input
+              value={catEdit[catId] ?? ''}
+              onChange={(e) => setCatEdit((c) => ({ ...c, [catId]: e.target.value }))}
+              placeholder="renombrar categoría"
+              className={`w-40 text-sm ${INPUT}`}
+            />
+            <button type="button" disabled={!(catEdit[catId] ?? '').trim()} onClick={() => void guardarCategoria(catId)} className="text-sm font-bold text-oro-400 hover:text-oro-300 disabled:text-piedra-600">✓</button>
+          </div>
           {[...subs.entries()].map(([sub, prods]) => (
             <div key={sub} className="mb-2">
-              <p className="mb-1 text-xs font-bold uppercase tracking-wide text-piedra-500">{sub}</p>
+              <div className="mb-1 flex items-center gap-2">
+                <p className="text-xs font-bold uppercase tracking-wide text-piedra-500">{sub}</p>
+                {sub !== 'Sin subcategoría' && (
+                  <>
+                    <input
+                      value={subEdit[sub] ?? ''}
+                      onChange={(e) => setSubEdit((s) => ({ ...s, [sub]: e.target.value }))}
+                      placeholder="renombrar subcategoría"
+                      className={`w-40 text-xs ${INPUT}`}
+                    />
+                    <button type="button" disabled={!(subEdit[sub] ?? '').trim()} onClick={() => void guardarSub(sub)} className="text-xs font-bold text-oro-400 hover:text-oro-300 disabled:text-piedra-600">✓</button>
+                  </>
+                )}
+              </div>
               <div className={CARD}>
                 {prods.map((p) =>
                   editId === p.id ? (
@@ -636,12 +735,27 @@ function PanelProductos({ token, esSuper, sucursal }: { token: string; esSuper: 
                       >
                         {p.disponible ? 'Marcar agotado' : 'Reactivar'}
                       </button>
+                      {/* Precio por sucursal (RF-D-8): solo con una sucursal elegida. */}
+                      {gestionable && (
+                        <>
+                          <input type="number" value={precioSuc[p.id] ?? ''} onChange={(e) => setPrecioSuc((s) => ({ ...s, [p.id]: e.target.value }))} className={`w-24 tabular-nums ${INPUT}`} placeholder="aquí $" />
+                          <button type="button" onClick={() => void fijarPrecioSuc(p.id)} disabled={!precioSuc[p.id]} className="text-sm font-bold text-oro-400 hover:text-oro-300 disabled:text-piedra-600">Fijar aquí</button>
+                          <button type="button" onClick={() => void quitarPrecioSuc(p.id)} className="text-sm text-piedra-400 hover:text-piedra-200">Precio general</button>
+                        </>
+                      )}
                       <button
                         type="button"
                         onClick={() => { setEditId(p.id); setEditForm({ nombre: p.nombre, categoria: catNombre.get(p.categoriaId) ?? '', subcategoria: p.subcategoria ?? '' }); }}
                         className="text-sm text-piedra-400 hover:text-piedra-200"
                       >
                         Editar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => admin.historialPrecios(token, p.id).then((filas) => setHistorial({ nombre: p.nombre, filas }))}
+                        className="text-sm text-piedra-400 hover:text-piedra-200"
+                      >
+                        Historial
                       </button>
                       <button
                         type="button"
@@ -658,6 +772,24 @@ function PanelProductos({ token, esSuper, sucursal }: { token: string; esSuper: 
           ))}
         </div>
       ))}
+
+      {/* Historial de precio (RF-D-4): quién lo cambió y cuándo (control T1). */}
+      {historial && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 p-4" onClick={() => setHistorial(null)}>
+          <div className={`w-full max-w-sm p-5 ${CARD}`} onClick={(e) => e.stopPropagation()}>
+            <div className="mb-3 flex items-center justify-between">
+              <h3 className="text-h2 font-bold text-oro-300">Precios · {historial.nombre}</h3>
+              <button type="button" onClick={() => setHistorial(null)} className="text-piedra-400 hover:text-piedra-200">✕</button>
+            </div>
+            {historial.filas.length === 0 && <p className="text-piedra-500">Sin cambios registrados.</p>}
+            {historial.filas.map((h, i) => (
+              <p key={i} className="tabular-nums text-piedra-400">
+                {h.createdAt.slice(0, 10)}: ${h.precioAnterior} → ${h.precioNuevo}
+              </p>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -665,9 +797,20 @@ function PanelProductos({ token, esSuper, sucursal }: { token: string; esSuper: 
 function PanelUsuarios({ token, esSuper, sucursal, sucursales }: { token: string; esSuper: boolean; sucursal: string; sucursales: Sucursal[] }) {
   const [usuarios, setUsuarios] = useState<UsuarioAdmin[]>([]);
   const [nuevo, setNuevo] = useState({ nombre: '', rol: 'mesero', sucursalId: '', pin: '' });
+  const [pinEdit, setPinEdit] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const nombreSuc = useMemo(() => new Map(sucursales.map((s) => [s.id, s.nombre])), [sucursales]);
   const cargar = useCallback(async () => setUsuarios(await admin.usuarios(token, sucursal)), [token, sucursal]);
+
+  async function reasignarPin(id: string) {
+    setError(null);
+    try {
+      await admin.cambiarPin(token, id, (pinEdit[id] ?? '').trim());
+      setPinEdit((s) => { const n = { ...s }; delete n[id]; return n; });
+    } catch {
+      setError('PIN inválido (6 dígitos, no obvio).');
+    }
+  }
   useEffect(() => { void cargar(); }, [cargar]);
   useEffect(() => setNuevo((n) => ({ ...n, sucursalId: sucursales[0]?.id ?? '' })), [sucursales]);
 
@@ -705,9 +848,26 @@ function PanelUsuarios({ token, esSuper, sucursal, sucursales }: { token: string
               <td className="capitalize text-piedra-500">{u.rol}</td>
               {esSuper && <td className="text-piedra-500">{u.sucursalId ? nombreSuc.get(u.sucursalId) : '—'}</td>}
               <td className={u.activo ? 'text-ok' : 'text-piedra-500'}>{u.activo ? 'activo' : 'baja'}</td>
-              <td className="py-1 text-right">
-                {u.activo && u.rol !== 'administrador' && u.rol !== 'superadmin' && (
-                  <button type="button" onClick={() => void admin.bajaUsuario(token, u.id).then(cargar)} className="font-bold text-rojo-400 hover:text-rojo-300">Dar de baja</button>
+              <td className="flex items-center justify-end gap-2 py-1">
+                {u.activo && (u.rol === 'mesero' || u.rol === 'cocina') && (
+                  <>
+                    <input
+                      value={pinEdit[u.id] ?? ''}
+                      onChange={(e) => setPinEdit((s) => ({ ...s, [u.id]: e.target.value }))}
+                      placeholder="Nuevo PIN"
+                      inputMode="numeric"
+                      className={`w-24 tabular-nums ${INPUT}`}
+                    />
+                    <button
+                      type="button"
+                      disabled={(pinEdit[u.id] ?? '').length < 4}
+                      onClick={() => void reasignarPin(u.id)}
+                      className="font-bold text-oro-400 hover:text-oro-300 disabled:text-piedra-600"
+                    >
+                      PIN
+                    </button>
+                    <button type="button" onClick={() => void admin.bajaUsuario(token, u.id).then(cargar)} className="font-bold text-rojo-400 hover:text-rojo-300">Dar de baja</button>
+                  </>
                 )}
               </td>
             </tr>
